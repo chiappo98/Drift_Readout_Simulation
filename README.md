@@ -20,7 +20,9 @@ cd build
 ./drift
 ```
 
-L'eseguibile legge `config/config.json` e `config/simulation.json`. In alternativa, si possono indicare entrambi i percorsi come argomenti. I risultati del segnale vengono salvati in `results.root`.
+L'eseguibile legge `config/config.json` e `config/simulation.json`. In alternativa, si possono indicare entrambi i percorsi come argomenti. I risultati del segnale vengono salvati in `results/results.root`.
+
+Analisi degli istogrammi con ROOT: `root -l -q 'analyse_results.C'`. Il macro crea `results_histograms.root` e `results_histograms.png`; il file di input si può passare come primo argomento.
 
 ## Configurazione
 

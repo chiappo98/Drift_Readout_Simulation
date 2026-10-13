@@ -743,6 +743,16 @@ int main(int argc, char* argv[]) {
       }
     }
 
+    // dopo il loop, crea l'RDataFrame dai vettori
+    ROOT::RDataFrame df(v_totalCharge.size());
+    auto df2 = df.Define("totalCharge", [&](ULong64_t i){ return v_totalCharge[i]; }, {"rdfentry_"})
+                .Define("q_peak",      [&](ULong64_t i){ return v_q_peak[i]; }, {"rdfentry_"})
+                .Define("t_peak",      [&](ULong64_t i){ return v_t_peak[i]; }, {"rdfentry_"})
+                .Define("t_threshold", [&](ULong64_t i){ return v_t_threshold[i]; }, {"rdfentry_"});
+    df2.Snapshot("results", "results/results.root"); // salva su file come TTree, riapribile con RDataFrame
+
+
+
     // --- 1. MANUAL SIGNAL PLOTTING (Raw Current) ---
 
     TCanvas* c1 = nullptr;
@@ -930,15 +940,6 @@ int main(int argc, char* argv[]) {
     }
 
     sensor.ClearSignal();
-
-
-    // dopo il loop, crea l'RDataFrame dai vettori
-    ROOT::RDataFrame df(v_totalCharge.size());
-    auto df2 = df.Define("totalCharge", [&](ULong64_t i){ return v_totalCharge[i]; }, {"rdfentry_"})
-                .Define("q_peak",      [&](ULong64_t i){ return v_q_peak[i]; }, {"rdfentry_"})
-                .Define("t_peak",      [&](ULong64_t i){ return v_t_peak[i]; }, {"rdfentry_"})
-                .Define("t_threshold", [&](ULong64_t i){ return v_t_threshold[i]; }, {"rdfentry_"});
-    df2.Snapshot("results", "results.root"); // salva su file come TTree, riapribile con RDataFrame
   }
 
 
