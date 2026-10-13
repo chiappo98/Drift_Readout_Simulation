@@ -686,6 +686,9 @@ int main(int argc, char* argv[]) {
     double tStep = 0.5;
     double tStart = 0.0;
 
+    TCanvas* c1 = nullptr;
+    TH1* ht = nullptr;
+
     sensor.SetTimeWindow(tStart, tStep, nbins);
 
     // Define ionizing track (muon)
@@ -736,9 +739,77 @@ int main(int argc, char* argv[]) {
           drift_ind->DriftIon(electron.x, electron.y, electron.z, electron.t);
         }
       }
-      double eventTotalCharge = 0.0;
-      for (int i = 0; i < nbins; ++i) {
-        eventTotalCharge -= sensor.GetSignal("s", i) * tStep;
+
+
+      if (plotSignals) {
+        c1 = new TCanvas("c1", "Induction Signals", 2000, 500);
+        c1->Divide(4, 1);
+
+        c1->cd(1);
+        driftView_rkf->SetCanvas((TPad*)c1->GetPad(1));
+        const bool twod = true;
+        driftView_rkf->SetArea(-cell_t/2,-cell_w/2, cell_t/2, cell_w/2);
+        driftView_rkf->Plot(twod);
+        cellView.SetCanvas((TPad*)c1->GetPad(1));
+        cellView.Plot2d();
+
+        TLatex* tex = new TLatex();
+        tex->SetNDC(true);
+        tex->DrawLatex(0.2, 0.85, Form("Arrival time spread: %.1f ns", drift_ind->GetArrivalTimeSpread()));
+
+        c1->cd(2);
+        gStyle->SetLineWidth(1);
+        sensor.PlotSignal("s",(TPad*)c1->GetPad(2),"tei");
+
+        TLegend* leg = new TLegend(0.65, 0.15, 0.8, 0.33);
+        TPad* pad2 = (TPad*)c1->GetPad(2);
+        ht = (TH1*)pad2->GetPrimitive("hSignal__0");
+        TH1* he = (TH1*)pad2->GetPrimitive("hSignalElectrons__0");
+        TH1* hi = (TH1*)pad2->GetPrimitive("hSignalIons__0");
+        ht->SetLineWidth(2);
+        he->SetLineWidth(2);
+        hi->SetLineWidth(2);
+        leg->AddEntry(ht, "total", "l");
+        leg->AddEntry(he, "electron", "l");
+        leg->AddEntry(hi, "ion", "l");
+        leg->Draw();
+        pad2->Modified();
+        pad2->Update();
+      }
+
+      // --- COMPUTE CUMULATIVE CHARGE DISTRIBUTION
+      TH1* hch = (TH1*) ht->Clone("hch");
+      std::vector<double> totCharge = {0};
+      double totalCharge = 0;
+      for (int i = 1; i <= hch->GetNbinsX(); ++i) {
+        totCharge.push_back(totCharge[i-1] - ht->GetBinContent(i)*tStep);
+        totalCharge -= ht->GetBinContent(i)*tStep;
+        hch -> SetBinContent(i, totCharge[i]);
+      }
+      if (simulationFlags.signalInduction.printCumulative) {
+        double charge99 = 0.9 * totalCharge;
+        auto it = std::find_if(totCharge.begin(), totCharge.end(),
+                            [charge99](double v) { return v > charge99; });
+        int bin99 = std::distance(totCharge.begin(), it);
+
+        TCanvas* c2 = new TCanvas("c2", "Cumulative Signal Charge", 600, 500);
+        c2->cd();
+        hch->Draw();
+
+        double ychmin = gPad->GetUymin(); // current y-range of the pad (after Draw())
+        double ychmax = gPad->GetUymax();
+        double t99 = hch->GetBinCenter(bin99);
+        TLine* line = new TLine(t99, ychmin, t99, ychmax);
+        line->SetLineColor(kRed);
+        line->SetLineWidth(2);
+        line->SetLineStyle(2); // dashed
+        line->Draw();
+        gPad->Modified();
+        gPad->Update();
+
+        std::cout << " " << std::endl;
+        std::cout << "t99: " << t99 << std::endl;
+        std::cout << "charge99: " << charge99 << std::endl;
       }
 
       sensor.SetTransferFunction(config.shaperOrder == 1 ? transfer1ord : transfer3ord);
@@ -757,7 +828,7 @@ int main(int argc, char* argv[]) {
         }
       }
 
-      v_totalCharge.push_back(eventTotalCharge);
+      v_totalCharge.push_back(totalCharge);
       v_q_peak.push_back(eventPeak);
       v_t_peak.push_back(tStart + (eventPeakBin + 0.5) * tStep);
       v_t_threshold.push_back(eventThresholdBin < 0
@@ -769,6 +840,96 @@ int main(int argc, char* argv[]) {
       v_dx1.push_back(dx1);
       v_dy1.push_back(dy1);
       v_dz1.push_back(dz1);
+
+
+
+      // --- 3. PROCESSED SIGNAL (Electronics Transfer Function) ---
+      const double gain = config.gain;
+      const double threshold = config.threshold;
+    
+      TH1* ht3 = nullptr;
+      TPad* pad3 = nullptr;
+      if (plotSignals) {
+        c1->cd(3);
+        sensor.PlotSignal("s",(TPad*)c1->GetPad(3));
+        pad3 = (TPad*)c1->GetPad(3);
+        ht3 = (TH1*)pad3->GetPrimitive("hSignal__0");
+        ht3->SetLineWidth(2);
+
+        double ymin = ht3->GetMinimum();
+        double ymax = ht3->GetMaximum();
+        pad3->Update();
+        TGaxis* axis_mV = new TGaxis(
+            pad3->GetUxmax(), pad3->GetUymin(),
+            pad3->GetUxmax(), pad3->GetUymax(),
+            ymin * gain, ymax * gain,
+            510, "+L");
+        axis_mV->SetTitle("Signal (mV)");
+        axis_mV->SetTitleOffset(1.3);
+        axis_mV->SetLineColor(kRed);
+        axis_mV->SetLabelColor(kRed);
+        axis_mV->SetTitleColor(kRed);
+        axis_mV->Draw();
+
+      }
+
+      // FIND peak TIME AND CHARGE and time-at-threshold
+  
+      int bin_below = -1;
+      for (int i = 1; i <= ht3->GetNbinsX(); ++i) {
+          if (ht3->GetBinContent(i) < threshold) {
+              bin_below = i;
+              break;
+          }
+      }
+
+      if (plotSignals) {
+        TLatex* tex1 = new TLatex();
+        tex1->SetNDC(true);
+        std::vector<std::string> lines = {
+            Form("Q signal: %.1f fC", totalCharge),
+            Form("Q measured (peak): %.1f fC", eventPeak),
+            Form("t@peak: %.1f ns", v_t_peak[-1]),
+            Form("t@threshold: %.1f ns", v_t_threshold[-1])
+        };
+        double y0 = 0.3;
+        double dy = 0.05;
+        for (size_t i = 0; i < lines.size(); ++i) {
+          tex1->DrawLatex(0.4, y0 - i*dy, lines[i].c_str());
+        }
+
+        pad3->SetTicks(1, 0);
+        pad3->SetRightMargin(0.15);
+        pad3->SetBorderMode(0);
+        pad3->Modified();
+        pad3->Update();
+      }
+
+      if (plotSignals) {
+        if (ht->Integral() != 0) ht->Scale(1.0 / ht->Integral());
+        if (ht3->Integral() != 0) ht3->Scale(3.0 / ht3->Integral());
+
+        c1->cd(4);
+        TPad* pad4 = (TPad*)c1->GetPad(4);
+        ht->SetLineColor(kBlue);
+        ht->SetLineWidth(2);
+        ht3->SetLineColor(kRed);
+        ht3->SetLineWidth(2);
+
+        double y4max = std::max(ht->GetMaximum(), ht3->GetMaximum());
+        ht->SetMaximum(y4max * 1.1);
+        ht->Draw("HIST");
+        ht3->Draw("HIST SAME");
+
+        TLegend* leg4 = new TLegend(0.65, 0.75, 0.88, 0.88);
+        leg4->AddEntry(ht, "current signal", "l");
+        leg4->AddEntry(ht3, "shaper signal", "l");
+        leg4->Draw();
+
+        pad4->Modified();
+        pad4->Update();
+      }
+
     }
 
     // dopo il loop, crea l'RDataFrame dai vettori
@@ -785,193 +946,6 @@ int main(int argc, char* argv[]) {
                 .Define("dz1", [&](ULong64_t i){ return v_dz1[i]; }, {"rdfentry_"});
     df2.Snapshot("results", "../results/results.root"); // salva su file come TTree, riapribile con RDataFrame
 
-
-
-    // --- 1. MANUAL SIGNAL PLOTTING (Raw Current) ---
-
-    TCanvas* c1 = nullptr;
-    TH1* ht = nullptr;
-    if (plotSignals) {
-      c1 = new TCanvas("c1", "Induction Signals", 2000, 500);
-      c1->Divide(4, 1);
-
-      c1->cd(1);
-      driftView_rkf->SetCanvas((TPad*)c1->GetPad(1));
-      const bool twod = true;
-      driftView_rkf->SetArea(-cell_t/2,-cell_w/2, cell_t/2, cell_w/2);
-      driftView_rkf->Plot(twod);
-      cellView.SetCanvas((TPad*)c1->GetPad(1));
-      cellView.Plot2d();
-
-      TLatex* tex = new TLatex();
-      tex->SetNDC(true);
-      tex->DrawLatex(0.2, 0.85, Form("Arrival time spread: %.1f ns", drift_ind->GetArrivalTimeSpread()));
-
-      c1->cd(2);
-      gStyle->SetLineWidth(1);
-      sensor.PlotSignal("s",(TPad*)c1->GetPad(2),"tei");
-
-      TLegend* leg = new TLegend(0.65, 0.15, 0.8, 0.33);
-      TPad* pad2 = (TPad*)c1->GetPad(2);
-      ht = (TH1*)pad2->GetPrimitive("hSignal__0");
-      TH1* he = (TH1*)pad2->GetPrimitive("hSignalElectrons__0");
-      TH1* hi = (TH1*)pad2->GetPrimitive("hSignalIons__0");
-      ht->SetLineWidth(2);
-      he->SetLineWidth(2);
-      hi->SetLineWidth(2);
-      leg->AddEntry(ht, "total", "l");
-      leg->AddEntry(he, "electron", "l");
-      leg->AddEntry(hi, "ion", "l");
-      leg->Draw();
-      pad2->Modified();
-      pad2->Update();
-    } else {
-      TH1D* rawSignal = new TH1D("rawSignal", "Raw signal;Time [ns];Current [fC/ns]",
-                                 static_cast<int>(nbins), tStart, tStart + nbins * tStep);
-      for (int i = 0; i < nbins; ++i) {
-        rawSignal->SetBinContent(i + 1, sensor.GetSignal("s", i));
-      }
-      ht = rawSignal;
-    }
-
-    // --- COMPUTE CUMULATIVE CHARGE DISTRIBUTION
-    TH1* hch = (TH1*) ht->Clone("hch");
-    std::vector<double> totCharge = {0};
-    double totalCharge = 0;
-    for (int i = 1; i <= hch->GetNbinsX(); ++i) {
-      totCharge.push_back(totCharge[i-1] - ht->GetBinContent(i)*tStep);
-      totalCharge -= ht->GetBinContent(i)*tStep;
-      hch -> SetBinContent(i, totCharge[i]);
-    }
-    if (simulationFlags.signalInduction.printCumulative) {
-      double charge99 = 0.9 * totalCharge;
-      auto it = std::find_if(totCharge.begin(), totCharge.end(),
-                          [charge99](double v) { return v > charge99; });
-      int bin99 = std::distance(totCharge.begin(), it);
-
-      TCanvas* c2 = new TCanvas("c2", "Cumulative Signal Charge", 600, 500);
-      c2->cd();
-      hch->Draw();
-
-      double ychmin = gPad->GetUymin(); // current y-range of the pad (after Draw())
-      double ychmax = gPad->GetUymax();
-      double t99 = hch->GetBinCenter(bin99);
-      TLine* line = new TLine(t99, ychmin, t99, ychmax);
-      line->SetLineColor(kRed);
-      line->SetLineWidth(2);
-      line->SetLineStyle(2); // dashed
-      line->Draw();
-      gPad->Modified();
-      gPad->Update();
-
-      std::cout << " " << std::endl;
-      std::cout << "t99: " << t99 << std::endl;
-      std::cout << "charge99: " << charge99 << std::endl;
-    }
-    
-    // --- 3. PROCESSED SIGNAL (Electronics Transfer Function) ---
-    sensor.SetTransferFunction(config.shaperOrder == 1 ? transfer1ord : transfer3ord);
-    sensor.ConvoluteSignals();
-    const double gain = config.gain;
-    const double threshold = config.threshold;
-  
-    TH1* ht3 = nullptr;
-    TPad* pad3 = nullptr;
-    if (plotSignals) {
-      c1->cd(3);
-      sensor.PlotSignal("s",(TPad*)c1->GetPad(3));
-      pad3 = (TPad*)c1->GetPad(3);
-      ht3 = (TH1*)pad3->GetPrimitive("hSignal__0");
-      ht3->SetLineWidth(2);
-
-      double ymin = ht3->GetMinimum();
-      double ymax = ht3->GetMaximum();
-      pad3->Update();
-      TGaxis* axis_mV = new TGaxis(
-          pad3->GetUxmax(), pad3->GetUymin(),
-          pad3->GetUxmax(), pad3->GetUymax(),
-          ymin * gain, ymax * gain,
-          510, "+L");
-      axis_mV->SetTitle("Signal (mV)");
-      axis_mV->SetTitleOffset(1.3);
-      axis_mV->SetLineColor(kRed);
-      axis_mV->SetLabelColor(kRed);
-      axis_mV->SetTitleColor(kRed);
-      axis_mV->Draw();
-    } else {
-      TH1D* shapedSignal = new TH1D("shapedSignal", "Shaped signal;Time [ns];Signal [fC]",
-                                    static_cast<int>(nbins), tStart, tStart + nbins * tStep);
-      for (int i = 0; i < nbins; ++i) {
-        shapedSignal->SetBinContent(i + 1, sensor.GetSignal("s", i));
-      }
-      ht3 = shapedSignal;
-    }
-
-    // FIND peak TIME AND CHARGE and time-at-threshold
-    int peak_bin = ht3->GetMinimumBin();
-    double t_peak = ht3->GetXaxis()->GetBinCenter(peak_bin);
-    double q_peak = ht3->GetMinimum(); 
-
-    int bin_below = -1;
-    for (int i = 1; i <= ht3->GetNbinsX(); ++i) {
-        if (ht3->GetBinContent(i) < threshold) {
-            bin_below = i;
-            break;
-        }
-    }
-
-    if (plotSignals) {
-      TLatex* tex1 = new TLatex();
-      tex1->SetNDC(true);
-      std::vector<std::string> lines = {
-          Form("Q signal: %.1f fC", totalCharge),
-          Form("Q measured (peak): %.1f fC", q_peak),
-          Form("t@peak: %.1f ns", t_peak),
-          Form("t@threshold: %.1f ns", bin_below > 0 ? ht3->GetBinCenter(bin_below) : -1.0)
-      };
-      double y0 = 0.3;
-      double dy = 0.05;
-      for (size_t i = 0; i < lines.size(); ++i) {
-        tex1->DrawLatex(0.4, y0 - i*dy, lines[i].c_str());
-      }
-
-      pad3->SetTicks(1, 0);
-      pad3->SetRightMargin(0.15);
-      pad3->SetBorderMode(0);
-      pad3->Modified();
-      pad3->Update();
-    }
-
-    // dentro il tuo loop:
-    v_totalCharge.push_back(totalCharge);
-    v_q_peak.push_back(q_peak);
-    v_t_peak.push_back(t_peak);
-    v_t_threshold.push_back(bin_below > 0 ? ht3->GetBinCenter(bin_below) : -1.0);
-
-    if (plotSignals) {
-      if (ht->Integral() != 0) ht->Scale(1.0 / ht->Integral());
-      if (ht3->Integral() != 0) ht3->Scale(3.0 / ht3->Integral());
-
-      c1->cd(4);
-      TPad* pad4 = (TPad*)c1->GetPad(4);
-      ht->SetLineColor(kBlue);
-      ht->SetLineWidth(2);
-      ht3->SetLineColor(kRed);
-      ht3->SetLineWidth(2);
-
-      double y4max = std::max(ht->GetMaximum(), ht3->GetMaximum());
-      ht->SetMaximum(y4max * 1.1);
-      ht->Draw("HIST");
-      ht3->Draw("HIST SAME");
-
-      TLegend* leg4 = new TLegend(0.65, 0.75, 0.88, 0.88);
-      leg4->AddEntry(ht, "current signal", "l");
-      leg4->AddEntry(ht3, "shaper signal", "l");
-      leg4->Draw();
-
-      pad4->Modified();
-      pad4->Update();
-    }
 
     sensor.ClearSignal();
   }
