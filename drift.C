@@ -711,36 +711,33 @@ int main(int argc, char* argv[]) {
           drift_ind->DriftIon(electron.x, electron.y, electron.z, electron.t);
         }
       }
-      if (iEvent + 1 < simulationFlags.signalInduction.numberOfEvents) {
-        double eventTotalCharge = 0.0;
-        for (int i = 0; i < nbins; ++i) {
-          eventTotalCharge -= sensor.GetSignal("s", i) * tStep;
-        }
-
-        sensor.SetTransferFunction(config.shaperOrder == 1 ? transfer1ord : transfer3ord);
-        sensor.ConvoluteSignals();
-        double eventPeak = 0.0;
-        int eventPeakBin = 0;
-        int eventThresholdBin = -1;
-        for (int i = 0; i < nbins; ++i) {
-          const double signal = sensor.GetSignal("s", i);
-          if (i == 0 || signal < eventPeak) {
-            eventPeak = signal;
-            eventPeakBin = i;
-          }
-          if (eventThresholdBin < 0 && signal < -10.0) {
-            eventThresholdBin = i;
-          }
-        }
-
-        v_totalCharge.push_back(eventTotalCharge);
-        v_q_peak.push_back(eventPeak);
-        v_t_peak.push_back(tStart + (eventPeakBin + 0.5) * tStep);
-        v_t_threshold.push_back(eventThresholdBin < 0
-                                     ? -1.0
-                                     : tStart + (eventThresholdBin + 0.5) * tStep);
-        sensor.ClearSignal();
+      double eventTotalCharge = 0.0;
+      for (int i = 0; i < nbins; ++i) {
+        eventTotalCharge -= sensor.GetSignal("s", i) * tStep;
       }
+
+      sensor.SetTransferFunction(config.shaperOrder == 1 ? transfer1ord : transfer3ord);
+      sensor.ConvoluteSignals();
+      double eventPeak = 0.0;
+      int eventPeakBin = 0;
+      int eventThresholdBin = -1;
+      for (int i = 0; i < nbins; ++i) {
+        const double signal = sensor.GetSignal("s", i);
+        if (i == 0 || signal < eventPeak) {
+          eventPeak = signal;
+          eventPeakBin = i;
+        }
+        if (eventThresholdBin < 0 && signal < -10.0) {
+          eventThresholdBin = i;
+        }
+      }
+
+      v_totalCharge.push_back(eventTotalCharge);
+      v_q_peak.push_back(eventPeak);
+      v_t_peak.push_back(tStart + (eventPeakBin + 0.5) * tStep);
+      v_t_threshold.push_back(eventThresholdBin < 0
+                                    ? -1.0
+                                    : tStart + (eventThresholdBin + 0.5) * tStep);
     }
 
     // dopo il loop, crea l'RDataFrame dai vettori
@@ -749,7 +746,7 @@ int main(int argc, char* argv[]) {
                 .Define("q_peak",      [&](ULong64_t i){ return v_q_peak[i]; }, {"rdfentry_"})
                 .Define("t_peak",      [&](ULong64_t i){ return v_t_peak[i]; }, {"rdfentry_"})
                 .Define("t_threshold", [&](ULong64_t i){ return v_t_threshold[i]; }, {"rdfentry_"});
-    df2.Snapshot("results", "results/results.root"); // salva su file come TTree, riapribile con RDataFrame
+    df2.Snapshot("results", "../results/results.root"); // salva su file come TTree, riapribile con RDataFrame
 
 
 
