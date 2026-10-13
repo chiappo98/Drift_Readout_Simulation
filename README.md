@@ -26,6 +26,6 @@ Analisi degli istogrammi con ROOT: `root -l -q 'analyse_results.C'`. Il macro cr
 
 ## Configurazione
 
-`config/config.json` contiene shaper, tensioni, geometria e percentuali del gas. `config/simulation.json` controlla le modalità di simulazione; `signalInduction` include numero di eventi, posizione e opzioni di stampa e grafici. `position` è una frazione tra 0 e 1.
+`config/config.json` contiene shaper, tensioni, geometria e percentuali del gas. `config/simulation.json` controlla le modalità di simulazione; `signalInduction` include numero di eventi, limiti `y_min`/`y_max` e opzioni di stampa e grafici. I limiti sono frazioni tra 0 e 1 della semilarghezza della cella; valori uguali fissano una posizione costante.
 
 I percorsi dei file `.gas` e delle mobilità ioniche in `drift.C` devono essere disponibili e, se necessario, adattati all'ambiente locale.

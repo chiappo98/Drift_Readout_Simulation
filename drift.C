@@ -19,6 +19,7 @@
 #include <vector>
 #include <algorithm>
 #include <cmath>
+#include <random>
 
 #include <nlohmann/json.hpp>
 
@@ -58,7 +59,8 @@ struct SimulationConfig {
 struct SignalInductionConfig {
   bool enabled;
   int numberOfEvents;
-  double position;
+  double yMin;
+  double yMax;
   bool printCumulative;
   bool plotSignals;
 };
@@ -146,8 +148,10 @@ SimulationFlags readSimulationFlags(const std::string& configPath) {
       !config["signalInduction"]["enabled"].is_boolean() ||
       !config["signalInduction"].contains("number_of_events") ||
       !config["signalInduction"]["number_of_events"].is_number_integer() ||
-      !config["signalInduction"].contains("position") ||
-      !config["signalInduction"]["position"].is_number() ||
+      !config["signalInduction"].contains("y_min") ||
+      !config["signalInduction"]["y_min"].is_number() ||
+      !config["signalInduction"].contains("y_max") ||
+      !config["signalInduction"]["y_max"].is_number() ||
       !config["signalInduction"].contains("print_cumulative") ||
       !config["signalInduction"]["print_cumulative"].is_boolean() ||
       !config["signalInduction"].contains("plot_signals") ||
@@ -159,13 +163,15 @@ SimulationFlags readSimulationFlags(const std::string& configPath) {
   const SignalInductionConfig signalInduction{
       config["signalInduction"]["enabled"].get<bool>(),
       config["signalInduction"]["number_of_events"].get<int>(),
-      config["signalInduction"]["position"].get<double>(),
+      config["signalInduction"]["y_min"].get<double>(),
+      config["signalInduction"]["y_max"].get<double>(),
       config["signalInduction"]["print_cumulative"].get<bool>(),
       config["signalInduction"]["plot_signals"].get<bool>()};
-  if (signalInduction.numberOfEvents < 1 || signalInduction.position < 0.0 ||
-      signalInduction.position > 1.0) {
+    if (signalInduction.numberOfEvents < 1 || signalInduction.yMin < 0.0 ||
+      signalInduction.yMin > 1.0 || signalInduction.yMax < 0.0 ||
+      signalInduction.yMax > 1.0 || signalInduction.yMin > signalInduction.yMax) {
     throw std::runtime_error(
-        "signalInduction.number_of_events must be >= 1 and position must be in the range 0..1.");
+      "signalInduction.number_of_events must be >= 1 and y_min/y_max must satisfy 0 <= y_min <= y_max <= 1.");
   }
 
   return {config["plotDrift"].get<bool>(),
@@ -674,6 +680,7 @@ int main(int argc, char* argv[]) {
   if (signalInduction) {
 
     std::vector<double> v_totalCharge, v_q_peak, v_t_peak, v_t_threshold;
+    std::vector<double> v_x1, v_y1, v_z1, v_dx1, v_dy1, v_dz1;
 
     double nbins = 8000;
     double tStep = 0.5;
@@ -699,9 +706,10 @@ int main(int argc, char* argv[]) {
     track_ind->EnablePlotting(driftView_rkf);
     drift_ind->EnablePlotting(driftView_rkf);
 
-    // Initial track parameters: passing horizontally above the wire
-    double x1 = -cell_t/2, y1 = simulationFlags.signalInduction.position * cell_w/2, z1 = 0.0, t1 = 0.0;
-    double dx1 = 1.0, dy1 = 0.0, dz1 = 0.0;
+    std::random_device randomSeed;
+    std::mt19937 randomEngine(randomSeed());
+    std::uniform_real_distribution<double> positionDistribution(
+      simulationFlags.signalInduction.yMin, simulationFlags.signalInduction.yMax);
 
     for (int iEvent = 0; iEvent < simulationFlags.signalInduction.numberOfEvents; ++iEvent) {
       const int progressStep = std::max(1, simulationFlags.signalInduction.numberOfEvents / 10);
@@ -710,6 +718,16 @@ int main(int argc, char* argv[]) {
                   << simulationFlags.signalInduction.numberOfEvents << std::endl;
       }
       if (iEvent > 0) sensor.ClearSignal();
+      const double position = simulationFlags.signalInduction.yMin == simulationFlags.signalInduction.yMax
+                  ? simulationFlags.signalInduction.yMin
+                  : positionDistribution(randomEngine);
+      const double x1 = -cell_t/2;
+      const double y1 = - position * cell_w/2;
+      const double z1 = 0.0;
+      const double t1 = 0.0;
+      const double dx1 = 1.0;
+      const double dy1 = 0.0;
+      const double dz1 = 0.0;
       track_ind->NewTrack(x1, y1, z1, t1, dx1, dy1, dz1);
       const auto& clusters_ind = track_ind->GetClusters();
       for (const auto& cl : clusters_ind) {
@@ -745,6 +763,12 @@ int main(int argc, char* argv[]) {
       v_t_threshold.push_back(eventThresholdBin < 0
                                     ? -1.0
                                     : tStart + (eventThresholdBin + 0.5) * tStep);
+      v_x1.push_back(x1);
+      v_y1.push_back(y1);
+      v_z1.push_back(z1);
+      v_dx1.push_back(dx1);
+      v_dy1.push_back(dy1);
+      v_dz1.push_back(dz1);
     }
 
     // dopo il loop, crea l'RDataFrame dai vettori
@@ -753,12 +777,12 @@ int main(int argc, char* argv[]) {
                 .Define("q_peak",      [&](ULong64_t i){ return v_q_peak[i]; }, {"rdfentry_"})
                 .Define("t_peak",      [&](ULong64_t i){ return v_t_peak[i]; }, {"rdfentry_"})
                 .Define("t_threshold", [&](ULong64_t i){ return v_t_threshold[i]; }, {"rdfentry_"})
-                .Define("x1", [x1](ULong64_t){ return x1; }, {"rdfentry_"})
-                .Define("y1", [y1](ULong64_t){ return y1; }, {"rdfentry_"})
-                .Define("z1", [z1](ULong64_t){ return z1; }, {"rdfentry_"})
-                .Define("dx1", [dx1](ULong64_t){ return dx1; }, {"rdfentry_"})
-                .Define("dy1", [dy1](ULong64_t){ return dy1; }, {"rdfentry_"})
-                .Define("dz1", [dz1](ULong64_t){ return dz1; }, {"rdfentry_"});
+                .Define("x1", [&](ULong64_t i){ return v_x1[i]; }, {"rdfentry_"})
+                .Define("y1", [&](ULong64_t i){ return v_y1[i]; }, {"rdfentry_"})
+                .Define("z1", [&](ULong64_t i){ return v_z1[i]; }, {"rdfentry_"})
+                .Define("dx1", [&](ULong64_t i){ return v_dx1[i]; }, {"rdfentry_"})
+                .Define("dy1", [&](ULong64_t i){ return v_dy1[i]; }, {"rdfentry_"})
+                .Define("dz1", [&](ULong64_t i){ return v_dz1[i]; }, {"rdfentry_"});
     df2.Snapshot("results", "../results/results.root"); // salva su file come TTree, riapribile con RDataFrame
 
 
