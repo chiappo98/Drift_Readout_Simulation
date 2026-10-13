@@ -42,6 +42,8 @@ using namespace Garfield;
 struct SimulationConfig {
   int shaperOrder;
   double shapingTimeNs;
+  double gain;
+  double threshold;
   double vSense;
   double vField;
   double vMylar;
@@ -83,6 +85,8 @@ SimulationConfig readConfig(const std::string& configPath) {
       !config["shaper"].is_number_integer() ||
       !config.contains("shaping_time_ns") ||
       !config["shaping_time_ns"].is_number() ||
+      !config.contains("gain_mV/fC") || !config["gain_mV/fC"].is_number() ||
+      !config.contains("threshold_fC") || !config["threshold_fC"].is_number() ||
       !config.contains("vSense") || !config["vSense"].is_number() ||
       !config.contains("vField") || !config["vField"].is_number() ||
       !config.contains("vMylar") || !config["vMylar"].is_number() ||
@@ -99,6 +103,8 @@ SimulationConfig readConfig(const std::string& configPath) {
   const SimulationConfig result{
       config["shaper"].get<int>(),
       config["shaping_time_ns"].get<double>(),
+      config["gain_mV/fC"].get<double>(),
+      config["threshold_fC"].get<double>(),
       config["vSense"].get<double>(),
       config["vField"].get<double>(),
       config["vMylar"].get<double>(),
@@ -110,6 +116,7 @@ SimulationConfig readConfig(const std::string& configPath) {
       config["co2_percent"].get<double>()};
   if ((result.shaperOrder != 1 && result.shaperOrder != 3) ||
       result.shapingTimeNs < 25.0 || result.shapingTimeNs > 250.0 ||
+      result.gain <= 0.0 ||
       result.cellW <= 0.0 || result.cellY <= 0.0 ||
       result.dSense <= 0.0 || result.dField <= 0.0 ||
       result.argonPercent < 0.0 || result.argonPercent > 100.0 ||
@@ -727,7 +734,7 @@ int main(int argc, char* argv[]) {
           eventPeak = signal;
           eventPeakBin = i;
         }
-        if (eventThresholdBin < 0 && signal < -10.0) {
+        if (eventThresholdBin < 0 && signal < config.threshold) {
           eventThresholdBin = i;
         }
       }
@@ -745,7 +752,13 @@ int main(int argc, char* argv[]) {
     auto df2 = df.Define("totalCharge", [&](ULong64_t i){ return v_totalCharge[i]; }, {"rdfentry_"})
                 .Define("q_peak",      [&](ULong64_t i){ return v_q_peak[i]; }, {"rdfentry_"})
                 .Define("t_peak",      [&](ULong64_t i){ return v_t_peak[i]; }, {"rdfentry_"})
-                .Define("t_threshold", [&](ULong64_t i){ return v_t_threshold[i]; }, {"rdfentry_"});
+                .Define("t_threshold", [&](ULong64_t i){ return v_t_threshold[i]; }, {"rdfentry_"})
+                .Define("x1", [x1](ULong64_t){ return x1; }, {"rdfentry_"})
+                .Define("y1", [y1](ULong64_t){ return y1; }, {"rdfentry_"})
+                .Define("z1", [z1](ULong64_t){ return z1; }, {"rdfentry_"})
+                .Define("dx1", [dx1](ULong64_t){ return dx1; }, {"rdfentry_"})
+                .Define("dy1", [dy1](ULong64_t){ return dy1; }, {"rdfentry_"})
+                .Define("dz1", [dz1](ULong64_t){ return dz1; }, {"rdfentry_"});
     df2.Snapshot("results", "../results/results.root"); // salva su file come TTree, riapribile con RDataFrame
 
 
@@ -835,8 +848,8 @@ int main(int argc, char* argv[]) {
     // --- 3. PROCESSED SIGNAL (Electronics Transfer Function) ---
     sensor.SetTransferFunction(config.shaperOrder == 1 ? transfer1ord : transfer3ord);
     sensor.ConvoluteSignals();
-    double gain = 2.0; // mV/fC
-    double threshold = -10; // fC
+    const double gain = config.gain;
+    const double threshold = config.threshold;
   
     TH1* ht3 = nullptr;
     TPad* pad3 = nullptr;
