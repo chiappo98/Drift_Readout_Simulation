@@ -1,0 +1,14 @@
+{
+  "plotDrift": false,
+  "plotField": false,
+  "plotGasPar": false,
+  "simTrack": false,
+  "simDriftRKF": false,
+  "signalInduction": {
+    "enabled": true,
+    "number_of_events": 1,
+    "position": 0.2,
+    "print_cumulative": false,
+    "plot_signals": true
+  }
+}

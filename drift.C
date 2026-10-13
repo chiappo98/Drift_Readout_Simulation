@@ -14,8 +14,13 @@
 
 #include <fstream>
 #include <iostream>
+#include <stdexcept>
+#include <string>
 #include <vector>
 #include <algorithm>
+#include <cmath>
+
+#include <nlohmann/json.hpp>
 
 #include "Garfield/ComponentAnalyticField.hh"
 #include "Garfield/AvalancheMC.hh"
@@ -33,6 +38,136 @@
 #include "Garfield/ViewMedium.hh"
 
 using namespace Garfield;
+
+struct SimulationConfig {
+  int shaperOrder;
+  double shapingTimeNs;
+  double vSense;
+  double vField;
+  double vMylar;
+  double cellW;
+  double cellY;
+  double dSense;
+  double dField;
+  double argonPercent;
+  double co2Percent;
+};
+
+struct SignalInductionConfig {
+  bool enabled;
+  int numberOfEvents;
+  double position;
+  bool printCumulative;
+  bool plotSignals;
+};
+
+struct SimulationFlags {
+  bool plotDrift;
+  bool plotField;
+  bool plotGasPar;
+  bool simTrack;
+  bool simDriftRKF;
+  SignalInductionConfig signalInduction;
+};
+
+double shapingTimeNs = 25.0;
+
+SimulationConfig readConfig(const std::string& configPath) {
+  std::ifstream input(configPath);
+  if (!input) {
+    throw std::runtime_error("Cannot open configuration file: " + configPath);
+  }
+
+  const auto config = nlohmann::json::parse(input);
+  if (!config.is_object() || !config.contains("shaper") ||
+      !config["shaper"].is_number_integer() ||
+      !config.contains("shaping_time_ns") ||
+      !config["shaping_time_ns"].is_number() ||
+      !config.contains("vSense") || !config["vSense"].is_number() ||
+      !config.contains("vField") || !config["vField"].is_number() ||
+      !config.contains("vMylar") || !config["vMylar"].is_number() ||
+      !config.contains("cell_w") || !config["cell_w"].is_number() ||
+      !config.contains("cell_y") || !config["cell_y"].is_number() ||
+      !config.contains("dSense") || !config["dSense"].is_number() ||
+      !config.contains("dField") || !config["dField"].is_number() ||
+      !config.contains("argon_percent") || !config["argon_percent"].is_number() ||
+      !config.contains("co2_percent") || !config["co2_percent"].is_number()) {
+    throw std::runtime_error(
+        "Configuration is missing a required simulation parameter or has an invalid type.");
+  }
+
+  const SimulationConfig result{
+      config["shaper"].get<int>(),
+      config["shaping_time_ns"].get<double>(),
+      config["vSense"].get<double>(),
+      config["vField"].get<double>(),
+      config["vMylar"].get<double>(),
+      config["cell_w"].get<double>(),
+      config["cell_y"].get<double>(),
+      config["dSense"].get<double>(),
+      config["dField"].get<double>(),
+      config["argon_percent"].get<double>(),
+      config["co2_percent"].get<double>()};
+  if ((result.shaperOrder != 1 && result.shaperOrder != 3) ||
+      result.shapingTimeNs < 25.0 || result.shapingTimeNs > 250.0 ||
+      result.cellW <= 0.0 || result.cellY <= 0.0 ||
+      result.dSense <= 0.0 || result.dField <= 0.0 ||
+      result.argonPercent < 0.0 || result.argonPercent > 100.0 ||
+      result.co2Percent < 0.0 || result.co2Percent > 100.0 ||
+      std::abs(result.argonPercent + result.co2Percent - 100.0) > 1.e-6) {
+    throw std::runtime_error(
+        "Invalid configuration: check shaper, shaping time, event count, position, positive geometry values, and gas percentages summing to 100.");
+  }
+  return result;
+}
+
+SimulationFlags readSimulationFlags(const std::string& configPath) {
+  std::ifstream input(configPath);
+  if (!input) {
+    throw std::runtime_error("Cannot open simulation configuration file: " + configPath);
+  }
+
+  const auto config = nlohmann::json::parse(input);
+  if (!config.is_object() || !config.contains("plotDrift") ||
+      !config["plotDrift"].is_boolean() || !config.contains("plotField") ||
+      !config["plotField"].is_boolean() || !config.contains("plotGasPar") ||
+      !config["plotGasPar"].is_boolean() || !config.contains("simTrack") ||
+      !config["simTrack"].is_boolean() || !config.contains("simDriftRKF") ||
+      !config["simDriftRKF"].is_boolean() || !config.contains("signalInduction") ||
+      !config["signalInduction"].is_object() ||
+      !config["signalInduction"].contains("enabled") ||
+      !config["signalInduction"]["enabled"].is_boolean() ||
+      !config["signalInduction"].contains("number_of_events") ||
+      !config["signalInduction"]["number_of_events"].is_number_integer() ||
+      !config["signalInduction"].contains("position") ||
+      !config["signalInduction"]["position"].is_number() ||
+      !config["signalInduction"].contains("print_cumulative") ||
+      !config["signalInduction"]["print_cumulative"].is_boolean() ||
+      !config["signalInduction"].contains("plot_signals") ||
+      !config["signalInduction"]["plot_signals"].is_boolean()) {
+    throw std::runtime_error(
+        "Simulation config must define the five mode flags and all signalInduction settings with the expected types.");
+  }
+
+  const SignalInductionConfig signalInduction{
+      config["signalInduction"]["enabled"].get<bool>(),
+      config["signalInduction"]["number_of_events"].get<int>(),
+      config["signalInduction"]["position"].get<double>(),
+      config["signalInduction"]["print_cumulative"].get<bool>(),
+      config["signalInduction"]["plot_signals"].get<bool>()};
+  if (signalInduction.numberOfEvents < 1 || signalInduction.position < 0.0 ||
+      signalInduction.position > 1.0) {
+    throw std::runtime_error(
+        "signalInduction.number_of_events must be >= 1 and position must be in the range 0..1.");
+  }
+
+  return {config["plotDrift"].get<bool>(),
+          config["plotField"].get<bool>(),
+          config["plotGasPar"].get<bool>(),
+          config["simTrack"].get<bool>(),
+          config["simDriftRKF"].get<bool>(),
+          signalInduction};
+}
 
 // bool readTransferFunction(Sensor& sensor) {
 //   std::ifstream infile;
@@ -57,13 +192,11 @@ using namespace Garfield;
 
 // This function simulates the response of the front-end electronics (shaper)
 double transfer1ord(double time) {
-    double tau = 25.0;
-    return (time / tau) * exp(1.0 - time / tau);
+  return (time / shapingTimeNs) * exp(1.0 - time / shapingTimeNs);
 }
 
 double transfer3ord(double time) {
-    double tau = 25.0;
-    return pow(time / tau, 3) * exp(3 * (1.0 - time / tau));
+  return pow(time / shapingTimeNs, 3) * exp(3 * (1.0 - time / shapingTimeNs));
 }
 
 double compute_mean(std::vector<double> v) {
@@ -79,13 +212,33 @@ double compute_std(std::vector<double> v) {
 }
 
 int main(int argc, char* argv[]) {
-  TApplication app("app", &argc, argv);
+  if (argc > 3) {
+    std::cerr << "Usage: " << argv[0]
+              << " [config/config.json] [config/simulation.json]" << std::endl;
+    return 1;
+  }
+  const std::string configPath = argc >= 2 ? argv[1] : "config/config.json";
+  const std::string simulationConfigPath = argc == 3 ? argv[2] : "config/simulation.json";
+  SimulationConfig config;
+  SimulationFlags simulationFlags;
+  try {
+    config = readConfig(configPath);
+    simulationFlags = readSimulationFlags(simulationConfigPath);
+  } catch (const std::exception& error) {
+    std::cerr << "Configuration error: " << error.what() << std::endl;
+    return 1;
+  }
+  shapingTimeNs = config.shapingTimeNs;
+
+  int rootArgc = 1;
+  char* rootArgv[] = {argv[0], nullptr};
+  TApplication app("app", &rootArgc, rootArgv);
 
   // Setup the gas.
   MediumMagboltz gas;
   gas.SetTemperature(293.15); //298.15
   gas.SetPressure(763.7); // 5 mBar overpressure
-  gas.SetComposition("ar", 90., "co2", 10.);
+  gas.SetComposition("ar", config.argonPercent, "co2", config.co2Percent);
   gas.Initialise(true);
   gas.EnablePenningTransfer();
   // Set the Penning transfer efficiency.
@@ -128,16 +281,16 @@ int main(int argc, char* argv[]) {
   ComponentAnalyticField cmp;
   cmp.SetMedium(&gas);
   // Wire radius [cm]
-  const double dSense = 0.002;
-  const double dField = 0.01;
+  const double dSense = config.dSense;
+  const double dField = config.dField;
   // Cell width
-  const double cell_w = 1.4; // y direction
+  const double cell_w = config.cellW; // y direction
   // Cell thickness
-  const double cell_t = 1.2; // x direction
+  const double cell_t = config.cellY; // x direction
   // Voltages
-  const double vSense = 0.;
-  const double vField = -1950.;
-  const double vMylar = -1550.;
+  const double vSense = config.vSense;
+  const double vField = config.vField;
+  const double vMylar = config.vMylar;
   // Add the wire in the centre.
   cmp.AddWire(0, 0, dSense, vSense, "s");
   cmp.AddWire(0, -cell_w/2, dField, vField);
@@ -161,12 +314,13 @@ int main(int argc, char* argv[]) {
 
 
   // --------------------- Simulations ----------------------------------------------------------------------------------//
-  constexpr bool plotDrift = false; // not tested - may crash
-  constexpr bool plotField = false;              // plot electric field, potential, E field lines, drift velocity map
-  constexpr bool plotGasPar = false;            // plot drift velocity in gas, lateral and transversal diffusion
-  constexpr bool simTrack = false;          
-  constexpr bool simDriftRKF = false;
-  constexpr bool signalInduction = true; 
+  const bool plotDrift = simulationFlags.plotDrift;
+  const bool plotField = simulationFlags.plotField;
+  const bool plotGasPar = simulationFlags.plotGasPar;
+  const bool simTrack = simulationFlags.simTrack;
+  const bool simDriftRKF = simulationFlags.simDriftRKF;
+  const bool signalInduction = simulationFlags.signalInduction.enabled;
+  const bool plotSignals = simulationFlags.signalInduction.plotSignals;
   // -------------------------------------------------------------------------------------------------------------------//
 
   fieldView.SetSensor(&sensor);
@@ -539,58 +693,102 @@ int main(int argc, char* argv[]) {
     drift_ind->EnablePlotting(driftView_rkf);
 
     // Initial track parameters: passing horizontally above the wire
-    double x1 = -cell_t/2, y1 = -0.3 * cell_w/2, z1 = 0.0, t1 = 0.0;
+    double x1 = -cell_t/2, y1 = simulationFlags.signalInduction.position * cell_w/2, z1 = 0.0, t1 = 0.0;
     double dx1 = 1.0, dy1 = 0.0, dz1 = 0.0;
 
-    track_ind->NewTrack(x1, y1, z1, t1, dx1, dy1, dz1);
-    // Extract and drift electrons from primary clusters
-    const auto& clusters_ind = track_ind->GetClusters();
-    for (const auto& cl : clusters_ind) {
+    for (int iEvent = 0; iEvent < simulationFlags.signalInduction.numberOfEvents; ++iEvent) {
+      const int progressStep = std::max(1, simulationFlags.signalInduction.numberOfEvents / 10);
+      if (iEvent % progressStep == 0) {
+        std::cout << "Simulating event " << iEvent + 1 << " / "
+                  << simulationFlags.signalInduction.numberOfEvents << std::endl;
+      }
+      if (iEvent > 0) sensor.ClearSignal();
+      track_ind->NewTrack(x1, y1, z1, t1, dx1, dy1, dz1);
+      const auto& clusters_ind = track_ind->GetClusters();
+      for (const auto& cl : clusters_ind) {
         for (const auto& electron : cl.electrons) {
-            drift_ind->DriftElectron(electron.x, electron.y, electron.z, electron.t);
-            drift_ind->DriftIon(electron.x, electron.y, electron.z, electron.t);
+          drift_ind->DriftElectron(electron.x, electron.y, electron.z, electron.t);
+          drift_ind->DriftIon(electron.x, electron.y, electron.z, electron.t);
         }
+      }
+      if (iEvent + 1 < simulationFlags.signalInduction.numberOfEvents) {
+        double eventTotalCharge = 0.0;
+        for (int i = 0; i < nbins; ++i) {
+          eventTotalCharge -= sensor.GetSignal("s", i) * tStep;
+        }
+
+        sensor.SetTransferFunction(config.shaperOrder == 1 ? transfer1ord : transfer3ord);
+        sensor.ConvoluteSignals();
+        double eventPeak = 0.0;
+        int eventPeakBin = 0;
+        int eventThresholdBin = -1;
+        for (int i = 0; i < nbins; ++i) {
+          const double signal = sensor.GetSignal("s", i);
+          if (i == 0 || signal < eventPeak) {
+            eventPeak = signal;
+            eventPeakBin = i;
+          }
+          if (eventThresholdBin < 0 && signal < -10.0) {
+            eventThresholdBin = i;
+          }
+        }
+
+        v_totalCharge.push_back(eventTotalCharge);
+        v_q_peak.push_back(eventPeak);
+        v_t_peak.push_back(tStart + (eventPeakBin + 0.5) * tStep);
+        v_t_threshold.push_back(eventThresholdBin < 0
+                                     ? -1.0
+                                     : tStart + (eventThresholdBin + 0.5) * tStep);
+        sensor.ClearSignal();
+      }
     }
 
     // --- 1. MANUAL SIGNAL PLOTTING (Raw Current) ---
 
-    // Create a canvas divided in three for the manual raw, ViewSignal raw, and processed signals
-    TCanvas* c1 = new TCanvas("c1", "Induction Signals", 2000, 500);
-    c1->Divide(4, 1);
+    TCanvas* c1 = nullptr;
+    TH1* ht = nullptr;
+    if (plotSignals) {
+      c1 = new TCanvas("c1", "Induction Signals", 2000, 500);
+      c1->Divide(4, 1);
 
-    // --- PLOT DRIFT LINES
-    c1->cd(1);
-    driftView_rkf->SetCanvas((TPad*)c1->GetPad(1));
+      c1->cd(1);
+      driftView_rkf->SetCanvas((TPad*)c1->GetPad(1));
+      const bool twod = true;
+      driftView_rkf->SetArea(-cell_t/2,-cell_w/2, cell_t/2, cell_w/2);
+      driftView_rkf->Plot(twod);
+      cellView.SetCanvas((TPad*)c1->GetPad(1));
+      cellView.Plot2d();
 
-    const bool twod = true;
-    driftView_rkf->SetArea(-cell_t/2,-cell_w/2, cell_t/2, cell_w/2);
-    driftView_rkf->Plot(twod);
-    cellView.SetCanvas((TPad*)c1->GetPad(1));
-    cellView.Plot2d();
+      TLatex* tex = new TLatex();
+      tex->SetNDC(true);
+      tex->DrawLatex(0.2, 0.85, Form("Arrival time spread: %.1f ns", drift_ind->GetArrivalTimeSpread()));
 
-    TLatex* tex = new TLatex();
-    tex->SetNDC(true); // ora x,y vanno da 0 a 1, indipendenti dal range degli assi
-    tex->DrawLatex(0.2, 0.85, Form("Arrival time spread: %.1f ns", drift_ind->GetArrivalTimeSpread()));
+      c1->cd(2);
+      gStyle->SetLineWidth(1);
+      sensor.PlotSignal("s",(TPad*)c1->GetPad(2),"tei");
 
-    // --- 2. VIEWSIGNAL PLOTTING (Raw Current) ---
-    c1->cd(2);
-    gStyle->SetLineWidth(1);
-    sensor.PlotSignal("s",(TPad*)c1->GetPad(2),"tei");
-
-    TLegend* leg = new TLegend(0.65, 0.15, 0.8, 0.33);
-    TPad* pad2 = (TPad*)c1->GetPad(2);
-    TH1* ht = (TH1*)pad2->GetPrimitive("hSignal__0");
-    TH1* he = (TH1*)pad2->GetPrimitive("hSignalElectrons__0");
-    TH1* hi = (TH1*)pad2->GetPrimitive("hSignalIons__0");
-    ht->SetLineWidth(2);
-    he->SetLineWidth(2);
-    hi->SetLineWidth(2);
-    leg->AddEntry(ht, "total", "l");
-    leg->AddEntry(he, "electron", "l");
-    leg->AddEntry(hi, "ion", "l");
-    leg->Draw();
-    pad2->Modified();
-    pad2->Update();
+      TLegend* leg = new TLegend(0.65, 0.15, 0.8, 0.33);
+      TPad* pad2 = (TPad*)c1->GetPad(2);
+      ht = (TH1*)pad2->GetPrimitive("hSignal__0");
+      TH1* he = (TH1*)pad2->GetPrimitive("hSignalElectrons__0");
+      TH1* hi = (TH1*)pad2->GetPrimitive("hSignalIons__0");
+      ht->SetLineWidth(2);
+      he->SetLineWidth(2);
+      hi->SetLineWidth(2);
+      leg->AddEntry(ht, "total", "l");
+      leg->AddEntry(he, "electron", "l");
+      leg->AddEntry(hi, "ion", "l");
+      leg->Draw();
+      pad2->Modified();
+      pad2->Update();
+    } else {
+      TH1D* rawSignal = new TH1D("rawSignal", "Raw signal;Time [ns];Current [fC/ns]",
+                                 static_cast<int>(nbins), tStart, tStart + nbins * tStep);
+      for (int i = 0; i < nbins; ++i) {
+        rawSignal->SetBinContent(i + 1, sensor.GetSignal("s", i));
+      }
+      ht = rawSignal;
+    }
 
     // --- COMPUTE CUMULATIVE CHARGE DISTRIBUTION
     TH1* hch = (TH1*) ht->Clone("hch");
@@ -601,8 +799,7 @@ int main(int argc, char* argv[]) {
       totalCharge -= ht->GetBinContent(i)*tStep;
       hch -> SetBinContent(i, totCharge[i]);
     }
-    bool print_cumulative = false;
-    if (print_cumulative) {
+    if (simulationFlags.signalInduction.printCumulative) {
       double charge99 = 0.9 * totalCharge;
       auto it = std::find_if(totCharge.begin(), totCharge.end(),
                           [charge99](double v) { return v > charge99; });
@@ -629,35 +826,42 @@ int main(int argc, char* argv[]) {
     }
     
     // --- 3. PROCESSED SIGNAL (Electronics Transfer Function) ---
-    sensor.SetTransferFunction(transfer1ord);
+    sensor.SetTransferFunction(config.shaperOrder == 1 ? transfer1ord : transfer3ord);
     sensor.ConvoluteSignals();
     double gain = 2.0; // mV/fC
     double threshold = -10; // fC
   
-    c1->cd(3);
-    sensor.PlotSignal("s",(TPad*)c1->GetPad(3));
+    TH1* ht3 = nullptr;
+    TPad* pad3 = nullptr;
+    if (plotSignals) {
+      c1->cd(3);
+      sensor.PlotSignal("s",(TPad*)c1->GetPad(3));
+      pad3 = (TPad*)c1->GetPad(3);
+      ht3 = (TH1*)pad3->GetPrimitive("hSignal__0");
+      ht3->SetLineWidth(2);
 
-    TPad* pad3 = (TPad*)c1->GetPad(3);
-    TH1* ht3 = (TH1*)pad3->GetPrimitive("hSignal__0");
-    ht3->SetLineWidth(2);
-
-    // Range attuale dell'asse y primario (fC)
-    double ymin = ht3->GetMinimum();
-    double ymax = ht3->GetMaximum();
-    // Crea il secondo asse, posizionato sul bordo destro del pad
-    pad3->Update(); // necessario per avere Uxmax/Uymax validi
-    TGaxis* axis_mV = new TGaxis(
-        pad3->GetUxmax(), pad3->GetUymin(),   // punto iniziale (in alto a destra... verifica orientamento)
-        pad3->GetUxmax(), pad3->GetUymax(),   // punto finale
-        ymin * gain, ymax * gain, // range in mV
-        510, "+L"                              // 510 = num. divisioni, "+L" disegna a destra
-    );
-    axis_mV->SetTitle("Signal (mV)");
-    axis_mV->SetTitleOffset(1.3);
-    axis_mV->SetLineColor(kRed);
-    axis_mV->SetLabelColor(kRed);
-    axis_mV->SetTitleColor(kRed);
-    axis_mV->Draw();
+      double ymin = ht3->GetMinimum();
+      double ymax = ht3->GetMaximum();
+      pad3->Update();
+      TGaxis* axis_mV = new TGaxis(
+          pad3->GetUxmax(), pad3->GetUymin(),
+          pad3->GetUxmax(), pad3->GetUymax(),
+          ymin * gain, ymax * gain,
+          510, "+L");
+      axis_mV->SetTitle("Signal (mV)");
+      axis_mV->SetTitleOffset(1.3);
+      axis_mV->SetLineColor(kRed);
+      axis_mV->SetLabelColor(kRed);
+      axis_mV->SetTitleColor(kRed);
+      axis_mV->Draw();
+    } else {
+      TH1D* shapedSignal = new TH1D("shapedSignal", "Shaped signal;Time [ns];Signal [fC]",
+                                    static_cast<int>(nbins), tStart, tStart + nbins * tStep);
+      for (int i = 0; i < nbins; ++i) {
+        shapedSignal->SetBinContent(i + 1, sensor.GetSignal("s", i));
+      }
+      ht3 = shapedSignal;
+    }
 
     // FIND peak TIME AND CHARGE and time-at-threshold
     int peak_bin = ht3->GetMinimumBin();
@@ -672,58 +876,58 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    TLatex* tex1 = new TLatex();
-    tex1->SetNDC(true); // ora x,y vanno da 0 a 1, indipendenti dal range degli assi
-    std::vector<std::string> lines = {
-        Form("Q signal: %.1f fC", totalCharge),
-        Form("Q measured (peak): %.1f fC", q_peak),
-        Form("t@peak: %.1f ns", t_peak),
-        Form("t@threshold: %.1f ns", ht3->GetBinCenter(bin_below))
-    };
-    double y0 = 0.3;
-    double dy = 0.05;
-    for (size_t i = 0; i < lines.size(); ++i) {
+    if (plotSignals) {
+      TLatex* tex1 = new TLatex();
+      tex1->SetNDC(true);
+      std::vector<std::string> lines = {
+          Form("Q signal: %.1f fC", totalCharge),
+          Form("Q measured (peak): %.1f fC", q_peak),
+          Form("t@peak: %.1f ns", t_peak),
+          Form("t@threshold: %.1f ns", bin_below > 0 ? ht3->GetBinCenter(bin_below) : -1.0)
+      };
+      double y0 = 0.3;
+      double dy = 0.05;
+      for (size_t i = 0; i < lines.size(); ++i) {
         tex1->DrawLatex(0.4, y0 - i*dy, lines[i].c_str());
-    }
+      }
 
-    pad3->SetTicks(1, 0);
-    pad3->SetRightMargin(0.15);
-    pad3->SetBorderMode(0);
-    pad3->Modified();
-    pad3->Update();
+      pad3->SetTicks(1, 0);
+      pad3->SetRightMargin(0.15);
+      pad3->SetBorderMode(0);
+      pad3->Modified();
+      pad3->Update();
+    }
 
     // dentro il tuo loop:
     v_totalCharge.push_back(totalCharge);
     v_q_peak.push_back(q_peak);
     v_t_peak.push_back(t_peak);
-    v_t_threshold.push_back(ht3->GetBinCenter(bin_below));
+    v_t_threshold.push_back(bin_below > 0 ? ht3->GetBinCenter(bin_below) : -1.0);
 
-    // Normalizza all'area unitaria
-    if (ht->Integral() != 0) ht->Scale(1.0 / ht->Integral());
-    if (ht3->Integral() != 0) ht3->Scale(3.0 / ht3->Integral());
+    if (plotSignals) {
+      if (ht->Integral() != 0) ht->Scale(1.0 / ht->Integral());
+      if (ht3->Integral() != 0) ht3->Scale(3.0 / ht3->Integral());
 
-    c1->cd(4);
-    TPad* pad4 = (TPad*)c1->GetPad(4);
-    ht->SetLineColor(kBlue);
-    ht->SetLineWidth(2);
-    ht3->SetLineColor(kRed);
-    ht3->SetLineWidth(2);
+      c1->cd(4);
+      TPad* pad4 = (TPad*)c1->GetPad(4);
+      ht->SetLineColor(kBlue);
+      ht->SetLineWidth(2);
+      ht3->SetLineColor(kRed);
+      ht3->SetLineWidth(2);
 
-    // Assicurati che il range y copra il massimo di entrambi
-    double y4max = std::max(ht->GetMaximum(), ht3->GetMaximum());
-    ht->SetMaximum(y4max * 1.1); // un po' di margine sopra
+      double y4max = std::max(ht->GetMaximum(), ht3->GetMaximum());
+      ht->SetMaximum(y4max * 1.1);
+      ht->Draw("HIST");
+      ht3->Draw("HIST SAME");
 
-    ht->Draw("HIST");      // disegna il primo (definisce gli assi)
-    ht3->Draw("HIST SAME"); // sovrappone il secondo sugli stessi assi
+      TLegend* leg4 = new TLegend(0.65, 0.75, 0.88, 0.88);
+      leg4->AddEntry(ht, "current signal", "l");
+      leg4->AddEntry(ht3, "shaper signal", "l");
+      leg4->Draw();
 
-    // Legenda
-    TLegend* leg4 = new TLegend(0.65, 0.75, 0.88, 0.88);
-    leg4->AddEntry(ht, "current signal", "l");
-    leg4->AddEntry(ht3, "shaper signal", "l");
-    leg4->Draw();
-
-    pad4->Modified();
-    pad4->Update();
+      pad4->Modified();
+      pad4->Update();
+    }
 
     sensor.ClearSignal();
 
