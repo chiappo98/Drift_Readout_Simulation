@@ -31,11 +31,14 @@ void analyse_results(const char* runNumber) {
   }
 
   struct HistogramSpec {
-    const char* branch;
+    const char* expression;
     const char* name;
     const char* title;
   };
-  const std::array<HistogramSpec, 11> specs{{
+  const std::array<const char*, 11> requiredBranches{{
+      "totalCharge", "q_peak", "t_peak", "t_rise", "t_fall",
+      "x1", "y1", "z1", "dx1", "dy1", "dz1"}};
+  const std::array<HistogramSpec, 14> specs{{
       {"totalCharge", "h_totalCharge", "Total charge;Charge [fC];Events"},
       {"q_peak", "h_q_peak", "Peak charge;Peak charge [fC];Events"},
       {"t_peak", "h_t_peak", "Peak time;Time [ns];Events"},
@@ -46,11 +49,17 @@ void analyse_results(const char* runNumber) {
       {"z1", "h_z1", "Track start z;Position [cm];Events"},
       {"dx1", "h_dx1", "Track direction dx;Direction cosine;Events"},
       {"dy1", "h_dy1", "Track direction dy;Direction cosine;Events"},
-      {"dz1", "h_dz1", "Track direction dz;Direction cosine;Events"}}};
+      {"dz1", "h_dz1", "Track direction dz;Direction cosine;Events"},
+      {"totalCharge != 0 ? q_peak / totalCharge : 0", "h_q_peak_over_totalCharge",
+       "Peak/total charge ratio;Q peak / Q total;Events"},
+      {"t_peak - t_rise", "h_t_peak_minus_t_rise",
+       "Peak time - rise time;Time difference [ns];Events"},
+      {"t_rise - t_fall", "h_t_rise_minus_t_fall",
+       "Rise time - fall time;Time difference [ns];Events"}}};
 
-  for (const auto& spec : specs) {
-    if (!tree->GetBranch(spec.branch)) {
-      std::cerr << "Branch '" << spec.branch << "' not found in tree 'results'." << std::endl;
+  for (const auto* branch : requiredBranches) {
+    if (!tree->GetBranch(branch)) {
+      std::cerr << "Branch '" << branch << "' not found in tree 'results'." << std::endl;
       return;
     }
   }
@@ -62,14 +71,14 @@ void analyse_results(const char* runNumber) {
   }
 
   outputFile.cd();
-  TCanvas canvas("c_results", "Simulation results", 1200, 1200);
-  canvas.Divide(3, 4);
+  TCanvas canvas("c_results", "Simulation results", 1600, 1200);
+  canvas.Divide(4, 4);
 
   for (std::size_t i = 0; i < specs.size(); ++i) {
     const auto& spec = specs[i];
-    const std::string expression = std::string(spec.branch) + ">>" + spec.name + "(100)";
+    const std::string expression = std::string(spec.expression) + ">>" + spec.name + "(100)";
     if (tree->Draw(expression.c_str(), "", "goff") < 0) {
-      std::cerr << "Failed to fill histogram for branch '" << spec.branch << "'." << std::endl;
+      std::cerr << "Failed to fill histogram '" << spec.name << "'." << std::endl;
       return;
     }
 
