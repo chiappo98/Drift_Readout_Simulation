@@ -7,10 +7,18 @@
 #include <iostream>
 #include <string>
 
-void analyse_results(const char* inputPath = "results/results.root",
-                     const char* outputPath = "results/results_histograms.root",
-                     const char* imagePath = "results/results_histograms.png") {
-  TFile inputFile(inputPath, "READ");
+void analyse_results(const char* runNumber) {
+  if (!runNumber || std::string(runNumber).empty()) {
+    std::cerr << "A run number is required." << std::endl;
+    return;
+  }
+
+  const std::string runPath = std::string("results/run") + runNumber;
+  const std::string inputPath = runPath + ".root";
+  const std::string outputPath = runPath + "_histograms.root";
+  const std::string imagePath = runPath + "_histograms.png";
+
+  TFile inputFile(inputPath.c_str(), "READ");
   if (inputFile.IsZombie()) {
     std::cerr << "Cannot open input file: " << inputPath << std::endl;
     return;
@@ -47,7 +55,7 @@ void analyse_results(const char* inputPath = "results/results.root",
     }
   }
 
-  TFile outputFile(outputPath, "RECREATE");
+  TFile outputFile(outputPath.c_str(), "RECREATE");
   if (outputFile.IsZombie()) {
     std::cerr << "Cannot create output file: " << outputPath << std::endl;
     return;
@@ -77,7 +85,7 @@ void analyse_results(const char* inputPath = "results/results.root",
   }
 
   canvas.Write();
-  canvas.SaveAs(imagePath);
+  canvas.SaveAs(imagePath.c_str());
   std::cout << "Histograms saved to " << outputPath << std::endl;
   std::cout << "Canvas saved to " << imagePath << std::endl;
 }

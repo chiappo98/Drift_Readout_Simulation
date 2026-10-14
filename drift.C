@@ -16,6 +16,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <cctype>
 #include <vector>
 #include <algorithm>
 #include <cmath>
@@ -228,13 +229,20 @@ double compute_std(std::vector<double> v) {
 }
 
 int main(int argc, char* argv[]) {
-  if (argc > 3) {
+  if (argc < 2 || argc > 4) {
     std::cerr << "Usage: " << argv[0]
-              << " [config/config.json] [config/simulation.json]" << std::endl;
+              << " <run_number> [config/config.json] [config/simulation.json]" << std::endl;
     return 1;
   }
-  const std::string configPath = argc >= 2 ? argv[1] : "config/config.json";
-  const std::string simulationConfigPath = argc == 3 ? argv[2] : "config/simulation.json";
+  const std::string runNumber = argv[1];
+  if (runNumber.empty() ||
+      !std::all_of(runNumber.begin(), runNumber.end(),
+                   [](unsigned char character) { return std::isdigit(character); })) {
+    std::cerr << "Run number must contain only digits." << std::endl;
+    return 1;
+  }
+  const std::string configPath = argc >= 3 ? argv[2] : "config/config.json";
+  const std::string simulationConfigPath = argc >= 4 ? argv[3] : "config/simulation.json";
   SimulationConfig config;
   SimulationFlags simulationFlags;
   try {
@@ -967,7 +975,8 @@ int main(int argc, char* argv[]) {
                 .Define("dx1", [&](ULong64_t i){ return v_dx1[i]; }, {"rdfentry_"})
                 .Define("dy1", [&](ULong64_t i){ return v_dy1[i]; }, {"rdfentry_"})
                 .Define("dz1", [&](ULong64_t i){ return v_dz1[i]; }, {"rdfentry_"});
-    df2.Snapshot("results", "../results/results.root"); // salva su file come TTree, riapribile con RDataFrame
+    const std::string outputPath = "../results/run" + runNumber + ".root";
+    df2.Snapshot("results", outputPath); // salva il TTree del run
 
 
     sensor.ClearSignal();
