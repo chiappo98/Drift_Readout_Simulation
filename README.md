@@ -9,20 +9,19 @@ Simulazione del drift e del segnale indotto con Garfield++ e ROOT.
 - ROOT con `ROOTDataFrame`
 - `nlohmann_json` (versione 3.2 o successiva)
 
-## Build ed esecuzione
+## Esecuzione
 
-Con l'ambiente Garfield++ e ROOT configurato:
+Da Linux o WSL, con Garfield++ e ROOT configurati:
 
 ```sh
-cmake -S . -B build
-cmake --build build
-cd build
-./drift
+bash setup.sh
+bash run.sh 01 simulation
+bash run.sh 01 analysis
 ```
 
-L'eseguibile legge `config/config.json` e `config/simulation.json`. In alternativa, si possono indicare entrambi i percorsi come argomenti. I risultati del segnale vengono salvati in `results/results.root`.
+`setup.sh` crea le directory necessarie; `run.sh` lo richiama automaticamente. Il numero del run è obbligatorio e viene usato nei nomi `results/runXX.*`. Se si rilancia un numero già presente, i file corrispondenti vengono spostati in una sottocartella datata di `results/backup` prima della simulazione. La modalità `simulation` configura CMake, compila `drift` e lo avvia. Per passare JSON personalizzati: `bash run.sh 01 simulation config/config.json config/simulation.json`.
 
-Analisi degli istogrammi con ROOT: `root -l -q 'analyse_results.C'`. Il macro crea `results_histograms.root` e `results_histograms.png`; il file di input si può passare come primo argomento.
+La modalità `analysis` legge il ROOT del run e crea `results/runXX_histograms.root` e `results/runXX_histograms.png`.
 
 ## Configurazione
 
