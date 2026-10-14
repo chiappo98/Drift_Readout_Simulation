@@ -27,11 +27,18 @@ void analyse_results(const char* inputPath = "results/results.root",
     const char* name;
     const char* title;
   };
-  const std::array<HistogramSpec, 4> specs{{
+  const std::array<HistogramSpec, 11> specs{{
       {"totalCharge", "h_totalCharge", "Total charge;Charge [fC];Events"},
       {"q_peak", "h_q_peak", "Peak charge;Peak charge [fC];Events"},
       {"t_peak", "h_t_peak", "Peak time;Time [ns];Events"},
-      {"t_threshold", "h_t_threshold", "Threshold crossing time;Time [ns];Events"}}};
+      {"t_rise", "h_t_rise", "Rise threshold crossing;Time [ns];Events"},
+      {"t_fall", "h_t_fall", "Fall threshold crossing;Time [ns];Events"},
+      {"x1", "h_x1", "Track start x;Position [cm];Events"},
+      {"y1", "h_y1", "Track start y;Position [cm];Events"},
+      {"z1", "h_z1", "Track start z;Position [cm];Events"},
+      {"dx1", "h_dx1", "Track direction dx;Direction cosine;Events"},
+      {"dy1", "h_dy1", "Track direction dy;Direction cosine;Events"},
+      {"dz1", "h_dz1", "Track direction dz;Direction cosine;Events"}}};
 
   for (const auto& spec : specs) {
     if (!tree->GetBranch(spec.branch)) {
@@ -47,8 +54,8 @@ void analyse_results(const char* inputPath = "results/results.root",
   }
 
   outputFile.cd();
-  TCanvas canvas("c_results", "Simulation results", 1200, 800);
-  canvas.Divide(2, 2);
+  TCanvas canvas("c_results", "Simulation results", 1200, 1200);
+  canvas.Divide(3, 4);
 
   for (std::size_t i = 0; i < specs.size(); ++i) {
     const auto& spec = specs[i];
