@@ -948,7 +948,7 @@ int main(int argc, char* argv[]) {
         pad4->Modified();
         pad4->Update();
 
-        std::string pdfPath = "signal_events.pdf";
+        std::string pdfPath = "../results/run" + runNumber + "_signal_events.pdf";
         if (signalCanvasCount > 1) {
           if (iEvent == 0) {
             pdfPath += "(";
@@ -957,7 +957,8 @@ int main(int argc, char* argv[]) {
           }
         }
         c1->SaveAs(pdfPath.c_str());
-        std::cout << "Added event " << iEvent + 1 << " to signal_events.pdf" << std::endl;
+        std::cout << "Added event " << iEvent + 1 << " to "
+            << "run" << runNumber << "_signal_events.pdf" << std::endl;
       }
 
     }

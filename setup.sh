@@ -7,6 +7,7 @@ mkdir -p \
   "$ROOT_DIR/build" \
   "$ROOT_DIR/config" \
   "$ROOT_DIR/results" \
+  "$ROOT_DIR/results/backup" \
   "$ROOT_DIR/gas_files" \
   "$ROOT_DIR/maps/mylar" \
   "$ROOT_DIR/maps/mesh" \

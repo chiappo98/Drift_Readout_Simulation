@@ -27,6 +27,38 @@ resolve_config_path() {
   fi
 }
 
+backup_previous_run() {
+  local results_dir="$ROOT_DIR/results"
+  local backup_root="$results_dir/backup"
+  local backup_path
+  local timestamp
+  local suffix=1
+  local -a matches=()
+  local -a run_files=()
+
+  shopt -s nullglob
+  matches=("$results_dir/run${RUN_NUMBER}."* "$results_dir/run${RUN_NUMBER}_"*)
+  shopt -u nullglob
+
+  for backup_path in "${matches[@]}"; do
+    if [[ -f "$backup_path" ]]; then
+      run_files+=("$backup_path")
+    fi
+  done
+  ((${#run_files[@]} > 0)) || return 0
+
+  timestamp="$(date '+%Y%m%d_%H%M%S')"
+  backup_path="$backup_root/run${RUN_NUMBER}_${timestamp}"
+  while [[ -e "$backup_path" ]]; do
+    backup_path="$backup_root/run${RUN_NUMBER}_${timestamp}_${suffix}"
+    ((suffix += 1))
+  done
+
+  mkdir -p "$backup_path"
+  mv -- "${run_files[@]}" "$backup_path/"
+  printf 'Backup del run %s creato in %s\n' "$RUN_NUMBER" "$backup_path"
+}
+
 case "$MODE" in
   simulation)
     if (($# > 3)); then
@@ -38,6 +70,7 @@ case "$MODE" in
     cmake -S "$ROOT_DIR" -B "$BUILD_DIR"
     cmake --build "$BUILD_DIR" --target drift
     mkdir -p "$ROOT_DIR/results"
+    backup_previous_run
 
     case $# in
       0)
