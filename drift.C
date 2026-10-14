@@ -44,7 +44,8 @@ struct SimulationConfig {
   int shaperOrder;
   double shapingTimeNs;
   double gain;
-  double threshold;
+  double thrRise;
+  double thrFall;
   double vSense;
   double vField;
   double vMylar;
@@ -88,7 +89,8 @@ SimulationConfig readConfig(const std::string& configPath) {
       !config.contains("shaping_time_ns") ||
       !config["shaping_time_ns"].is_number() ||
       !config.contains("gain_mV/fC") || !config["gain_mV/fC"].is_number() ||
-      !config.contains("threshold_fC") || !config["threshold_fC"].is_number() ||
+      !config.contains("thr_rise") || !config["thr_rise"].is_number() ||
+      !config.contains("thr_fall") || !config["thr_fall"].is_number() ||
       !config.contains("vSense") || !config["vSense"].is_number() ||
       !config.contains("vField") || !config["vField"].is_number() ||
       !config.contains("vMylar") || !config["vMylar"].is_number() ||
@@ -106,7 +108,8 @@ SimulationConfig readConfig(const std::string& configPath) {
       config["shaper"].get<int>(),
       config["shaping_time_ns"].get<double>(),
       config["gain_mV/fC"].get<double>(),
-      config["threshold_fC"].get<double>(),
+      config["thr_rise"].get<double>(),
+      config["thr_fall"].get<double>(),
       config["vSense"].get<double>(),
       config["vField"].get<double>(),
       config["vMylar"].get<double>(),
@@ -679,7 +682,7 @@ int main(int argc, char* argv[]) {
   }
   if (signalInduction) {
 
-    std::vector<double> v_totalCharge, v_q_peak, v_t_peak, v_t_threshold;
+    std::vector<double> v_totalCharge, v_q_peak, v_t_peak, v_t_rise, v_t_fall;
     std::vector<double> v_x1, v_y1, v_z1, v_dx1, v_dy1, v_dz1;
 
     double nbins = 8000;
@@ -713,8 +716,12 @@ int main(int argc, char* argv[]) {
     std::mt19937 randomEngine(randomSeed());
     std::uniform_real_distribution<double> positionDistribution(
       simulationFlags.signalInduction.yMin, simulationFlags.signalInduction.yMax);
+    constexpr int maxSignalCanvases = 20;
+    const int signalCanvasCount = std::min(
+        simulationFlags.signalInduction.numberOfEvents, maxSignalCanvases);
 
     for (int iEvent = 0; iEvent < simulationFlags.signalInduction.numberOfEvents; ++iEvent) {
+      const bool plotEventCanvas = plotSignals && iEvent < maxSignalCanvases;
       const int progressStep = std::max(1, simulationFlags.signalInduction.numberOfEvents / 10);
       if (iEvent % progressStep == 0) {
         std::cout << "Simulating event " << iEvent + 1 << " / "
@@ -741,9 +748,10 @@ int main(int argc, char* argv[]) {
       }
 
 
-      if (plotSignals) {
-        c1 = new TCanvas("c1", "Induction Signals", 2000, 500);
-        c1->Divide(4, 1);
+      if (plotEventCanvas) {
+        const std::string canvasName = "c1_event_" + std::to_string(iEvent + 1);
+        c1 = new TCanvas(canvasName.c_str(), "Induction Signals", 1200, 800);
+        c1->Divide(2, 2);
 
         c1->cd(1);
         driftView_rkf->SetCanvas((TPad*)c1->GetPad(1));
@@ -816,24 +824,30 @@ int main(int argc, char* argv[]) {
       sensor.ConvoluteSignals();
       double eventPeak = 0.0;
       int eventPeakBin = 0;
-      int eventThresholdBin = -1;
+      double eventTRise = -1.0;
+      double eventTFall = -1.0;
+      bool riseThresholdCrossed = false;
       for (int i = 0; i < nbins; ++i) {
         const double signal = sensor.GetSignal("s", i);
         if (i == 0 || signal < eventPeak) {
           eventPeak = signal;
           eventPeakBin = i;
         }
-        if (eventThresholdBin < 0 && signal < config.threshold) {
-          eventThresholdBin = i;
+        const double sampleTime = tStart + (i + 0.5) * tStep;
+        if (!riseThresholdCrossed && signal <= config.thrRise) {
+          eventTRise = sampleTime;
+          riseThresholdCrossed = true;
+        } else if (riseThresholdCrossed && eventTFall < 0.0 &&
+                   signal >= config.thrFall) {
+          eventTFall = sampleTime;
         }
       }
 
       v_totalCharge.push_back(totalCharge);
       v_q_peak.push_back(eventPeak);
       v_t_peak.push_back(tStart + (eventPeakBin + 0.5) * tStep);
-      v_t_threshold.push_back(eventThresholdBin < 0
-                                    ? -1.0
-                                    : tStart + (eventThresholdBin + 0.5) * tStep);
+      v_t_rise.push_back(eventTRise);
+      v_t_fall.push_back(eventTFall);
       v_x1.push_back(x1);
       v_y1.push_back(y1);
       v_z1.push_back(z1);
@@ -845,11 +859,10 @@ int main(int argc, char* argv[]) {
 
       // --- 3. PROCESSED SIGNAL (Electronics Transfer Function) ---
       const double gain = config.gain;
-      const double threshold = config.threshold;
     
       TH1* ht3 = nullptr;
       TPad* pad3 = nullptr;
-      if (plotSignals) {
+      if (plotEventCanvas) {
         c1->cd(3);
         sensor.PlotSignal("s",(TPad*)c1->GetPad(3));
         pad3 = (TPad*)c1->GetPad(3);
@@ -870,27 +883,25 @@ int main(int argc, char* argv[]) {
         axis_mV->SetLabelColor(kRed);
         axis_mV->SetTitleColor(kRed);
         axis_mV->Draw();
-
+      } else {
+        auto* shapedSignal = new TH1D("shapedSignal", "Shaped signal;Time [ns];Signal [fC]",
+                                      static_cast<int>(nbins), tStart, tStart + nbins * tStep);
+        for (int i = 0; i < nbins; ++i) {
+          shapedSignal->SetBinContent(i + 1, sensor.GetSignal("s", i));
+        }
+        ht3 = shapedSignal;
       }
 
       // FIND peak TIME AND CHARGE and time-at-threshold
-  
-      int bin_below = -1;
-      for (int i = 1; i <= ht3->GetNbinsX(); ++i) {
-          if (ht3->GetBinContent(i) < threshold) {
-              bin_below = i;
-              break;
-          }
-      }
-
-      if (plotSignals) {
+      if (plotEventCanvas) {
         TLatex* tex1 = new TLatex();
         tex1->SetNDC(true);
         std::vector<std::string> lines = {
             Form("Q signal: %.1f fC", totalCharge),
             Form("Q measured (peak): %.1f fC", eventPeak),
-            Form("t@peak: %.1f ns", v_t_peak[-1]),
-            Form("t@threshold: %.1f ns", v_t_threshold[-1])
+            Form("t@peak: %.1f ns", v_t_peak.back()),
+            Form("t@rise: %.1f ns", eventTRise),
+            Form("t@fall: %.1f ns", eventTFall)
         };
         double y0 = 0.3;
         double dy = 0.05;
@@ -905,7 +916,7 @@ int main(int argc, char* argv[]) {
         pad3->Update();
       }
 
-      if (plotSignals) {
+      if (plotEventCanvas) {
         if (ht->Integral() != 0) ht->Scale(1.0 / ht->Integral());
         if (ht3->Integral() != 0) ht3->Scale(3.0 / ht3->Integral());
 
@@ -928,6 +939,17 @@ int main(int argc, char* argv[]) {
 
         pad4->Modified();
         pad4->Update();
+
+        std::string pdfPath = "signal_events.pdf";
+        if (signalCanvasCount > 1) {
+          if (iEvent == 0) {
+            pdfPath += "(";
+          } else if (iEvent + 1 == signalCanvasCount) {
+            pdfPath += ")";
+          }
+        }
+        c1->SaveAs(pdfPath.c_str());
+        std::cout << "Added event " << iEvent + 1 << " to signal_events.pdf" << std::endl;
       }
 
     }
@@ -937,7 +959,8 @@ int main(int argc, char* argv[]) {
     auto df2 = df.Define("totalCharge", [&](ULong64_t i){ return v_totalCharge[i]; }, {"rdfentry_"})
                 .Define("q_peak",      [&](ULong64_t i){ return v_q_peak[i]; }, {"rdfentry_"})
                 .Define("t_peak",      [&](ULong64_t i){ return v_t_peak[i]; }, {"rdfentry_"})
-                .Define("t_threshold", [&](ULong64_t i){ return v_t_threshold[i]; }, {"rdfentry_"})
+                .Define("t_rise",      [&](ULong64_t i){ return v_t_rise[i]; }, {"rdfentry_"})
+                .Define("t_fall",      [&](ULong64_t i){ return v_t_fall[i]; }, {"rdfentry_"})
                 .Define("x1", [&](ULong64_t i){ return v_x1[i]; }, {"rdfentry_"})
                 .Define("y1", [&](ULong64_t i){ return v_y1[i]; }, {"rdfentry_"})
                 .Define("z1", [&](ULong64_t i){ return v_z1[i]; }, {"rdfentry_"})
