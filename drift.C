@@ -693,12 +693,14 @@ int main(int argc, char* argv[]) {
     std::vector<double> v_totalCharge, v_q_peak, v_t_peak, v_t_rise, v_t_fall;
     std::vector<double> v_x1, v_y1, v_z1, v_dx1, v_dy1, v_dz1;
 
-    double nbins = 8000;
+    double nbins = 3600;
     double tStep = 0.5;
     double tStart = 0.0;
 
     TCanvas* c1 = nullptr;
     TH1* ht = nullptr;
+    TH1D* rawSignal = new TH1D("rawSignal", "Raw signal;Time [ns];Signal [fC]", static_cast<int>(nbins), tStart, tStart + nbins * tStep);
+    TH1D* shapedSignal = new TH1D("shapedSignal", "Shaped signal;Time [ns];Signal [fC]", static_cast<int>(nbins), tStart, tStart + nbins * tStep);
 
     sensor.SetTimeWindow(tStart, tStep, nbins);
 
@@ -755,7 +757,6 @@ int main(int argc, char* argv[]) {
         }
       }
 
-
       if (plotEventCanvas) {
         const std::string canvasName = "c1_event_" + std::to_string(iEvent + 1);
         c1 = new TCanvas(canvasName.c_str(), "Induction Signals", 1200, 800);
@@ -791,6 +792,13 @@ int main(int argc, char* argv[]) {
         leg->Draw();
         pad2->Modified();
         pad2->Update();
+      } else {
+        for (int i = 0; i < nbins; ++i) {
+          rawSignal->SetBinContent(i + 1, sensor.GetSignal("s", i));
+        }
+        ht = rawSignal;
+
+        rawSignal->Reset();
       }
 
       // --- COMPUTE CUMULATIVE CHARGE DISTRIBUTION
@@ -864,7 +872,6 @@ int main(int argc, char* argv[]) {
       v_dz1.push_back(dz1);
 
 
-
       // --- 3. PROCESSED SIGNAL (Electronics Transfer Function) ---
       const double gain = config.gain;
     
@@ -892,12 +899,11 @@ int main(int argc, char* argv[]) {
         axis_mV->SetTitleColor(kRed);
         axis_mV->Draw();
       } else {
-        auto* shapedSignal = new TH1D("shapedSignal", "Shaped signal;Time [ns];Signal [fC]",
-                                      static_cast<int>(nbins), tStart, tStart + nbins * tStep);
         for (int i = 0; i < nbins; ++i) {
           shapedSignal->SetBinContent(i + 1, sensor.GetSignal("s", i));
         }
         ht3 = shapedSignal;
+        shapedSignal->Reset();
       }
 
       // FIND peak TIME AND CHARGE and time-at-threshold
@@ -911,7 +917,7 @@ int main(int argc, char* argv[]) {
             Form("t@rise: %.1f ns", eventTRise),
             Form("t@fall: %.1f ns", eventTFall)
         };
-        double y0 = 0.3;
+        double y0 = 0.5;
         double dy = 0.05;
         for (size_t i = 0; i < lines.size(); ++i) {
           tex1->DrawLatex(0.4, y0 - i*dy, lines[i].c_str());
@@ -925,24 +931,26 @@ int main(int argc, char* argv[]) {
       }
 
       if (plotEventCanvas) {
-        if (ht->Integral() != 0) ht->Scale(1.0 / ht->Integral());
-        if (ht3->Integral() != 0) ht3->Scale(3.0 / ht3->Integral());
+        TH1* ht_cl = (TH1*) ht->Clone("ht_cl");
+        TH1* ht3_cl = (TH1*) ht3->Clone("ht3_cl");
+        if (ht->Integral() != 0) ht_cl->Scale(1.0 / ht_cl->Integral());
+        if (ht3->Integral() != 0) ht3_cl->Scale(3.0 / ht3_cl->Integral());
 
         c1->cd(4);
         TPad* pad4 = (TPad*)c1->GetPad(4);
-        ht->SetLineColor(kBlue);
-        ht->SetLineWidth(2);
-        ht3->SetLineColor(kRed);
-        ht3->SetLineWidth(2);
+        ht_cl->SetLineColor(kBlue);
+        ht_cl->SetLineWidth(2);
+        ht3_cl->SetLineColor(kRed);
+        ht3_cl->SetLineWidth(2);
 
-        double y4max = std::max(ht->GetMaximum(), ht3->GetMaximum());
-        ht->SetMaximum(y4max * 1.1);
-        ht->Draw("HIST");
-        ht3->Draw("HIST SAME");
+        double y4max = std::max(ht_cl->GetMaximum(), ht3_cl->GetMaximum());
+        ht_cl->SetMaximum(y4max * 1.1);
+        ht_cl->Draw("HIST");
+        ht3_cl->Draw("HIST SAME");
 
         TLegend* leg4 = new TLegend(0.65, 0.75, 0.88, 0.88);
-        leg4->AddEntry(ht, "current signal", "l");
-        leg4->AddEntry(ht3, "shaper signal", "l");
+        leg4->AddEntry(ht_cl, "current signal", "l");
+        leg4->AddEntry(ht3_cl, "shaper signal", "l");
         leg4->Draw();
 
         pad4->Modified();
@@ -959,8 +967,12 @@ int main(int argc, char* argv[]) {
         c1->SaveAs(pdfPath.c_str());
         std::cout << "Added event " << iEvent + 1 << " to "
             << "run" << runNumber << "_signal_events.pdf" << std::endl;
+      
       }
 
+      driftView_rkf->Clear();
+      sensor.ClearSignal();
+      
     }
 
     // dopo il loop, crea l'RDataFrame dai vettori
@@ -978,9 +990,7 @@ int main(int argc, char* argv[]) {
                 .Define("dz1", [&](ULong64_t i){ return v_dz1[i]; }, {"rdfentry_"});
     const std::string outputPath = "../results/run" + runNumber + ".root";
     df2.Snapshot("results", outputPath); // salva il TTree del run
-
-
-    sensor.ClearSignal();
+    
   }
 
 
