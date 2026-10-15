@@ -120,7 +120,7 @@ SimulationConfig readConfig(const std::string& configPath) {
       config["dField"].get<double>(),
       config["argon_percent"].get<double>(),
       config["co2_percent"].get<double>()};
-  if ((result.shaperOrder != 1 && result.shaperOrder != 3) ||
+  if ((result.shaperOrder != 0 && result.shaperOrder != 1 && result.shaperOrder != 3) ||
       result.shapingTimeNs < 25.0 || result.shapingTimeNs > 250.0 ||
       result.gain <= 0.0 ||
       result.cellW <= 0.0 || result.cellY <= 0.0 ||
@@ -214,6 +214,16 @@ double transfer1ord(double time) {
 
 double transfer3ord(double time) {
   return pow(time / shapingTimeNs, 3) * exp(3 * (1.0 - time / shapingTimeNs));
+}
+
+double transferVTX(double time) {
+  // parameters of the VTX-like response function
+  const double vtx_gain = -1 * (39.6 / 40); // [mV/fC]
+  const double vtx_n = 3.34;
+  const double vtx_tau = 3.06;
+  const double vtx_t0 = 1.463; // time offset from the fit
+  time-=vtx_t0;
+  return time > 0 ? vtx_gain * pow(time / (vtx_n * vtx_tau), vtx_n) * exp(vtx_n - time / vtx_tau) : 0.0; // [mV]
 }
 
 double compute_mean(std::vector<double> v) {
@@ -836,7 +846,10 @@ int main(int argc, char* argv[]) {
         std::cout << "charge99: " << charge99 << std::endl;
       }
 
-      sensor.SetTransferFunction(config.shaperOrder == 1 ? transfer1ord : transfer3ord);
+      const auto transferFunction = config.shaperOrder == 0
+                     ? transferVTX
+                     : config.shaperOrder == 1 ? transfer1ord : transfer3ord;
+      sensor.SetTransferFunction(transferFunction);
       sensor.ConvoluteSignals();
       double eventPeak = 0.0;
       int eventPeakBin = 0;
@@ -845,16 +858,23 @@ int main(int argc, char* argv[]) {
       bool riseThresholdCrossed = false;
       for (int i = 0; i < nbins; ++i) {
         const double signal = sensor.GetSignal("s", i);
-        if (i == 0 || signal < eventPeak) {
+        const bool isPeak = config.shaperOrder == 0 ? signal > eventPeak : signal < eventPeak;
+        if (i == 0 || isPeak) {
           eventPeak = signal;
           eventPeakBin = i;
         }
         const double sampleTime = tStart + (i + 0.5) * tStep;
-        if (!riseThresholdCrossed && signal <= config.thrRise) {
+        const bool crossedRise = config.shaperOrder == 0
+                                     ? signal >= config.thrRise
+                                     : signal <= config.thrRise;
+        const bool crossedFall = config.shaperOrder == 0
+                                     ? signal <= config.thrFall
+                                     : signal >= config.thrFall;
+        if (!riseThresholdCrossed && crossedRise) {
           eventTRise = sampleTime;
           riseThresholdCrossed = true;
         } else if (riseThresholdCrossed && eventTFall < 0.0 &&
-                   signal >= config.thrFall) {
+                   crossedFall) {
           eventTFall = sampleTime;
         }
       }
@@ -873,7 +893,7 @@ int main(int argc, char* argv[]) {
 
 
       // --- 3. PROCESSED SIGNAL (Electronics Transfer Function) ---
-      const double gain = config.gain;
+      const double gain = config.shaperOrder == 0 ? 1.0 : config.gain;
     
       TH1* ht3 = nullptr;
       TPad* pad3 = nullptr;
