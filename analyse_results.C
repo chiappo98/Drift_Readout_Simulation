@@ -40,7 +40,7 @@ void analyse_results(const char* runNumber) {
       "x1", "y1", "z1", "dx1", "dy1", "dz1"}};
   const std::array<HistogramSpec, 14> specs{{
       {"totalCharge", "h_totalCharge", "Total charge;Charge [fC];Events"},
-      {"q_peak", "h_q_peak", "Peak charge;Peak charge [fC];Events"},
+      {"-q_peak", "h_q_peak", "Peak charge;Peak charge [fC];Events"},
       {"t_peak", "h_t_peak", "Peak time;Time [ns];Events"},
       {"t_rise", "h_t_rise", "Rise threshold crossing;Time [ns];Events"},
       {"t_fall", "h_t_fall", "Fall threshold crossing;Time [ns];Events"},
@@ -50,12 +50,12 @@ void analyse_results(const char* runNumber) {
       {"dx1", "h_dx1", "Track direction dx;Direction cosine;Events"},
       {"dy1", "h_dy1", "Track direction dy;Direction cosine;Events"},
       {"dz1", "h_dz1", "Track direction dz;Direction cosine;Events"},
-      {"totalCharge != 0 ? q_peak / totalCharge : 0", "h_q_peak_over_totalCharge",
+      {"totalCharge != 0 ? -q_peak / totalCharge : 0", "h_q_peak_over_totalCharge",
        "Peak/total charge ratio;Q peak / Q total;Events"},
       {"t_peak - t_rise", "h_t_peak_minus_t_rise",
        "Peak time - rise time;Time difference [ns];Events"},
-      {"t_rise - t_fall", "h_t_rise_minus_t_fall",
-       "Rise time - fall time;Time difference [ns];Events"}}};
+      {"t_fall - t_rise", "h_t_fall_minus_t_rise",
+       "Fall time - rise time;Time difference [ns];Events"}}};
 
   for (const auto* branch : requiredBranches) {
     if (!tree->GetBranch(branch)) {
