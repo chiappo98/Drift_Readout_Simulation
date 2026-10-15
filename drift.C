@@ -9,7 +9,9 @@
 #include <TGaxis.h>
 #include <TStyle.h>
 #include <TLatex.h>
+#include <TBranch.h>
 #include <TFile.h>
+#include <TTree.h>
 #include <ROOT/RDataFrame.hxx>
 
 #include <fstream>
@@ -712,6 +714,22 @@ int main(int argc, char* argv[]) {
     TH1D* rawSignal = new TH1D("rawSignal", "Raw signal;Time [ns];Signal [fC]", static_cast<int>(nbins), tStart, tStart + nbins * tStep);
     TH1D* shapedSignal = new TH1D("shapedSignal", "Shaped signal;Time [ns];Signal [fC]", static_cast<int>(nbins), tStart, tStart + nbins * tStep);
 
+    const std::string waveformPath = "../results/run" + runNumber + "_waveform.root";
+    TFile waveformFile(waveformPath.c_str(), "RECREATE");
+    if (waveformFile.IsZombie()) {
+      std::cerr << "Cannot create waveform file: " << waveformPath << std::endl;
+      return 1;
+    }
+    waveformFile.SetCompressionLevel(4);
+    waveformFile.cd();
+    TTree waveformTree("waveforms", "Shaped waveform for each event");
+    waveformTree.SetAutoFlush(-30000000);
+    ULong64_t waveformEvent = 0;
+    std::vector<float> shapedWaveform;
+    waveformTree.Branch("event", &waveformEvent);
+    TBranch* waveformBranch = waveformTree.Branch("waveform", &shapedWaveform);
+    waveformBranch->SetBasketSize(64 * 1024);
+
     sensor.SetTimeWindow(tStart, tStep, nbins);
 
     // Define ionizing track (muon)
@@ -851,6 +869,14 @@ int main(int argc, char* argv[]) {
                      : config.shaperOrder == 1 ? transfer1ord : transfer3ord;
       sensor.SetTransferFunction(transferFunction);
       sensor.ConvoluteSignals();
+      waveformEvent = static_cast<ULong64_t>(iEvent);
+      shapedWaveform.clear();
+      shapedWaveform.reserve(static_cast<std::size_t>(nbins));
+      for (int i = 0; i < nbins; ++i) {
+        shapedWaveform.push_back(static_cast<float>(sensor.GetSignal("s", i)));
+      }
+      waveformTree.Fill();
+
       double eventPeak = 0.0;
       int eventPeakBin = 0;
       double eventTRise = -1.0;
@@ -1010,6 +1036,10 @@ int main(int argc, char* argv[]) {
                 .Define("dz1", [&](ULong64_t i){ return v_dz1[i]; }, {"rdfentry_"});
     const std::string outputPath = "../results/run" + runNumber + ".root";
     df2.Snapshot("results", outputPath); // salva il TTree del run
+    waveformFile.cd();
+    waveformTree.Write();
+    waveformFile.Close();
+    std::cout << "Waveforms saved to " << waveformPath << std::endl;
     
   }
 
