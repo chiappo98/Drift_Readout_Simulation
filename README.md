@@ -7,6 +7,7 @@ Simulazione del drift e del segnale indotto con Garfield++ e ROOT.
 - CMake
 - Garfield++
 - ROOT con `ROOTDataFrame`
+- PyROOT
 - `nlohmann_json` (versione 3.2 o successiva)
 
 ## Esecuzione
@@ -17,6 +18,7 @@ Da Linux o WSL, con Garfield++ e ROOT configurati:
 bash setup.sh
 bash run.sh 01 simulation
 bash run.sh 01 analysis
+bash run.sh 01 waveform --event 0
 ```
 
 `setup.sh` crea le directory necessarie; `run.sh` lo richiama automaticamente. Il numero del run è obbligatorio e viene usato nei nomi `results/runXX.*`. Se si rilancia un numero già presente, i file corrispondenti vengono spostati in una sottocartella datata di `results/backup` prima della simulazione. La modalità `simulation` configura CMake, compila `drift` e lo avvia. Per passare JSON personalizzati: `bash run.sh 01 simulation config/config.json config/simulation.json`.
@@ -24,6 +26,14 @@ bash run.sh 01 analysis
 Oltre a `results/runXX.root`, la simulazione scrive `results/runXX_waveform.root`: il TTree `waveforms` contiene una entry per evento, con indice `event` e vettore `float` di campioni `waveform`. La scrittura è incrementale, compressa e suddivisa in cluster da circa 30 MB. Si legge con `ROOT::RDataFrame("waveforms", "results/runXX_waveform.root")`.
 
 La modalità `analysis` legge il ROOT del run e crea `results/runXX_histograms.root` e `results/runXX_histograms.png`.
+
+La modalità `waveform` esegue `analyse_waveform.py` con `python3` sul file `results/runXX_waveform.root`. Per visualizzare un evento specifico:
+
+```sh
+bash run.sh 01 waveform --event 0
+```
+
+Lo script stampa le statistiche dell'evento e salva un PDF accanto al file ROOT. `--event` è un indice da zero; `--output percorso.pdf` permette di scegliere il nome del PDF. Entrambe le opzioni si possono passare attraverso `run.sh`.
 
 ## Configurazione
 
