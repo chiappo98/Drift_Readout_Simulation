@@ -16,12 +16,6 @@ file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/config")
 configure_file(config/config.json "${CMAKE_CURRENT_BINARY_DIR}/config/config.json" COPYONLY)
 configure_file(config/simulation.json "${CMAKE_CURRENT_BINARY_DIR}/config/simulation.json" COPYONLY)
 
-# add_executable(drift_20x10 drift_20x10.C)
-# target_link_libraries(drift_20x10 Garfield::Garfield)
-
-# add_executable(drift_mesh drift_mesh.C)
-# target_link_libraries(drift_mesh Garfield::Garfield)
-
 add_executable(generateGas generateGas.C)
 target_link_libraries(generateGas Garfield::Garfield)
 
