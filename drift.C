@@ -693,8 +693,8 @@ int main(int argc, char* argv[]) {
     std::vector<double> v_totalCharge, v_q_peak, v_t_peak, v_t_rise, v_t_fall;
     std::vector<double> v_x1, v_y1, v_z1, v_dx1, v_dy1, v_dz1;
 
-    double nbins = 3600;
-    double tStep = 0.5;
+    double nbins = 1800;
+    double tStep = 1;
     double tStart = 0.0;
 
     TCanvas* c1 = nullptr;
