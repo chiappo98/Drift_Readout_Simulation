@@ -31,9 +31,10 @@ La modalità `waveform` esegue `analyse_waveform.py` con `python3` sul file `res
 
 ```sh
 bash run.sh 01 waveform --event 0
+bash run.sh 01 waveform --overlay
 ```
 
-Lo script stampa le statistiche dell'evento e salva un PDF accanto al file ROOT. `--event` è un indice da zero; `--output percorso.pdf` permette di scegliere il nome del PDF. Entrambe le opzioni si possono passare attraverso `run.sh`.
+Senza opzioni lo script salva il grafico dell'evento 0; `--event` seleziona un altro indice da zero. Con `--overlay` seleziona tutte le waveform con un solo massimo locale di ampiezza almeno il 10% del massimo assoluto, allinea il picco a `t = 0` e normalizza l'ampiezza assoluta a 1, quindi salva tutte le curve sovrapposte in un PDF. `--output percorso.pdf` permette di scegliere il nome del file in entrambe le modalità; le opzioni si possono passare attraverso `run.sh`.
 
 ## Configurazione
 
