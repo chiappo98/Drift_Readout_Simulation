@@ -25,6 +25,8 @@ bash run.sh 01 waveform --event 0
 
 Oltre a `results/runXX.root`, la simulazione scrive `results/runXX_waveform.root`: il TTree `waveforms` contiene una entry per evento, con indice `event` e vettore `float` di campioni `waveform`. La scrittura è incrementale, compressa e suddivisa in cluster da circa 30 MB. Si legge con `ROOT::RDataFrame("waveforms", "results/runXX_waveform.root")`.
 
+Nel TTree `results` di `results/runXX.root`, ogni evento include `nPrimaries` (numero di cluster primari) e i vettori `clusterX`, `clusterY`, `clusterZ`, `clusterT`, `clusterE` e `clusterElectrons`. Ogni elemento corrisponde allo stesso cluster nell'ordine restituito da Garfield++; `clusterElectrons` contiene il numero di elettroni del cluster.
+
 La modalità `analysis` legge il ROOT del run e crea `results/runXX_histograms.root` e `results/runXX_histograms.png`.
 
 La modalità `waveform` esegue `analyse_waveform.py` con `python3` sul file `results/runXX_waveform.root`. Per visualizzare un evento specifico:

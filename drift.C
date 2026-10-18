@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <cmath>
 #include <random>
+#include <utility>
 
 #include <nlohmann/json.hpp>
 
@@ -704,6 +705,10 @@ int main(int argc, char* argv[]) {
 
     std::vector<double> v_totalCharge, v_q_peak, v_t_peak, v_t_rise, v_t_fall;
     std::vector<double> v_x1, v_y1, v_z1, v_dx1, v_dy1, v_dz1;
+    std::vector<int> v_nPrimaries;
+    std::vector<std::vector<double>> v_clusterX, v_clusterY, v_clusterZ, v_clusterT,
+        v_clusterE;
+    std::vector<std::vector<int>> v_clusterElectrons;
 
     double nbins = 1800;
     double tStep = 1;
@@ -778,12 +783,34 @@ int main(int argc, char* argv[]) {
       const double dz1 = 0.0;
       track_ind->NewTrack(x1, y1, z1, t1, dx1, dy1, dz1);
       const auto& clusters_ind = track_ind->GetClusters();
+      std::vector<double> eventClusterX, eventClusterY, eventClusterZ, eventClusterT,
+          eventClusterE;
+      std::vector<int> eventClusterElectrons;
+      eventClusterX.reserve(clusters_ind.size());
+      eventClusterY.reserve(clusters_ind.size());
+      eventClusterZ.reserve(clusters_ind.size());
+      eventClusterT.reserve(clusters_ind.size());
+      eventClusterE.reserve(clusters_ind.size());
+      eventClusterElectrons.reserve(clusters_ind.size());
       for (const auto& cl : clusters_ind) {
+        eventClusterX.push_back(cl.x);
+        eventClusterY.push_back(cl.y);
+        eventClusterZ.push_back(cl.z);
+        eventClusterT.push_back(cl.t);
+        eventClusterE.push_back(cl.energy);
+        eventClusterElectrons.push_back(static_cast<int>(cl.electrons.size()));
         for (const auto& electron : cl.electrons) {
           drift_ind->DriftElectron(electron.x, electron.y, electron.z, electron.t);
           drift_ind->DriftIon(electron.x, electron.y, electron.z, electron.t);
         }
       }
+      v_nPrimaries.push_back(static_cast<int>(clusters_ind.size()));
+      v_clusterX.push_back(std::move(eventClusterX));
+      v_clusterY.push_back(std::move(eventClusterY));
+      v_clusterZ.push_back(std::move(eventClusterZ));
+      v_clusterT.push_back(std::move(eventClusterT));
+      v_clusterE.push_back(std::move(eventClusterE));
+      v_clusterElectrons.push_back(std::move(eventClusterElectrons));
 
       if (plotEventCanvas) {
         const std::string canvasName = "c1_event_" + std::to_string(iEvent + 1);
@@ -1025,6 +1052,13 @@ int main(int argc, char* argv[]) {
     ROOT::RDataFrame df(v_totalCharge.size());
     auto df2 = df.Define("totalCharge", [&](ULong64_t i){ return v_totalCharge[i]; }, {"rdfentry_"})
                 .Define("q_peak",      [&](ULong64_t i){ return v_q_peak[i]; }, {"rdfentry_"})
+                .Define("nPrimaries",  [&](ULong64_t i){ return v_nPrimaries[i]; }, {"rdfentry_"})
+                .Define("clusterX",    [&](ULong64_t i){ return v_clusterX[i]; }, {"rdfentry_"})
+                .Define("clusterY",    [&](ULong64_t i){ return v_clusterY[i]; }, {"rdfentry_"})
+                .Define("clusterZ",    [&](ULong64_t i){ return v_clusterZ[i]; }, {"rdfentry_"})
+                .Define("clusterT",    [&](ULong64_t i){ return v_clusterT[i]; }, {"rdfentry_"})
+                .Define("clusterE",    [&](ULong64_t i){ return v_clusterE[i]; }, {"rdfentry_"})
+                .Define("clusterElectrons", [&](ULong64_t i){ return v_clusterElectrons[i]; }, {"rdfentry_"})
                 .Define("t_peak",      [&](ULong64_t i){ return v_t_peak[i]; }, {"rdfentry_"})
                 .Define("t_rise",      [&](ULong64_t i){ return v_t_rise[i]; }, {"rdfentry_"})
                 .Define("t_fall",      [&](ULong64_t i){ return v_t_fall[i]; }, {"rdfentry_"})
