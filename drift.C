@@ -826,21 +826,18 @@ int main(int argc, char* argv[]) {
         cellView.SetCanvas(pad1);
         cellView.Plot2d();
 
-        const int maxClusterElectrons = eventClusterElectrons.empty()
-                                            ? 0
-                                            : *std::max_element(
-                                                  eventClusterElectrons.begin(),
-                                                  eventClusterElectrons.end());
-        // std::cout << "cluster events: " << 
-        const std::size_t nPrimaries = clusters_ind.size();
-        if (nPrimaries > 0 && maxClusterElectrons > 0) {
+        int maxClusterElectrons = 0;
+        for (const auto& cluster : clusters_ind) {
+          maxClusterElectrons =
+              std::max(maxClusterElectrons, static_cast<int>(cluster.electrons.size()));
+        }
+        if (!clusters_ind.empty() && maxClusterElectrons > 0) {
           const double maxClusterRadius = 0.05 * std::min(cell_t, cell_w);
           pad1->cd();
-          for (std::size_t iCluster = 0; iCluster < nPrimaries; ++iCluster) {
-            const double radius = maxClusterRadius * eventClusterElectrons[iCluster] /
-                                  maxClusterElectrons;
-            TEllipse clusterMarker(
-                eventClusterX[iCluster], eventClusterY[iCluster], radius, radius);
+          for (const auto& cluster : clusters_ind) {
+            const double radius =
+                maxClusterRadius * cluster.electrons.size() / maxClusterElectrons;
+            TEllipse clusterMarker(cluster.x, cluster.y, radius, radius);
             clusterMarker.SetLineColor(kRed + 1);
             clusterMarker.SetLineWidth(2);
             clusterMarker.SetFillStyle(0);
