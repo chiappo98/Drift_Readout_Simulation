@@ -818,12 +818,12 @@ int main(int argc, char* argv[]) {
         c1 = new TCanvas(canvasName.c_str(), "Induction Signals", 1200, 800);
         c1->Divide(2, 2);
 
-        c1->cd(1);
-        driftView_rkf->SetCanvas((TPad*)c1->GetPad(1));
+        TPad* pad1 = (TPad*)c1->cd(1);
+        driftView_rkf->SetCanvas(pad1);
         const bool twod = true;
         driftView_rkf->SetArea(-cell_t/2,-cell_w/2, cell_t/2, cell_w/2);
         driftView_rkf->Plot(twod);
-        cellView.SetCanvas((TPad*)c1->GetPad(1));
+        cellView.SetCanvas(pad1);
         cellView.Plot2d();
 
         const int maxClusterElectrons = eventClusterElectrons.empty()
@@ -832,9 +832,10 @@ int main(int argc, char* argv[]) {
                                                   eventClusterElectrons.begin(),
                                                   eventClusterElectrons.end());
         // std::cout << "cluster events: " << 
-        int nPrimaries = clusters_ind.size();
-        if ((nPrimaries > 0) & (maxClusterElectrons > 0)) {
-          const double maxClusterRadius = 0.02 * std::min(cell_t, cell_w);
+        const std::size_t nPrimaries = clusters_ind.size();
+        if (nPrimaries > 0 && maxClusterElectrons > 0) {
+          const double maxClusterRadius = 0.05 * std::min(cell_t, cell_w);
+          pad1->cd();
           for (std::size_t iCluster = 0; iCluster < nPrimaries; ++iCluster) {
             const double radius = maxClusterRadius * eventClusterElectrons[iCluster] /
                                   maxClusterElectrons;
@@ -845,6 +846,8 @@ int main(int argc, char* argv[]) {
             clusterMarker.SetFillStyle(0);
             clusterMarker.DrawClone("same");
           }
+          pad1->Modified();
+          pad1->Update();
         }
 
         TLatex* tex = new TLatex();
@@ -1026,8 +1029,12 @@ int main(int argc, char* argv[]) {
       }
 
       if (plotEventCanvas) {
-        TH1* ht_cl = (TH1*) ht->Clone("ht_cl");
-        TH1* ht3_cl = (TH1*) ht3->Clone("ht3_cl");
+        TH1* ht_cl = (TH1*) ht->Clone(
+            ("ht_cl_event_" + std::to_string(iEvent)).c_str());
+        TH1* ht3_cl = (TH1*) ht3->Clone(
+            ("ht3_cl_event_" + std::to_string(iEvent)).c_str());
+        ht_cl->SetDirectory(nullptr);
+        ht3_cl->SetDirectory(nullptr);
         if (ht->Integral() != 0) ht_cl->Scale(1.0 / ht_cl->Integral());
         if (ht3->Integral() != 0) ht3_cl->Scale(3.0 / ht3_cl->Integral());
 
@@ -1038,8 +1045,13 @@ int main(int argc, char* argv[]) {
         ht3_cl->SetLineColor(kRed);
         ht3_cl->SetLineWidth(2);
 
-        double y4max = std::max(ht_cl->GetMaximum(), ht3_cl->GetMaximum());
-        ht_cl->SetMaximum(y4max * 1.1);
+        const double y4min = std::min(ht_cl->GetMinimum(), ht3_cl->GetMinimum());
+        const double y4max = std::max(ht_cl->GetMaximum(), ht3_cl->GetMaximum());
+        const double y4range = y4max - y4min;
+        const double y4padding = y4range > 0.0 ? 0.1 * y4range : 1.0;
+        ht_cl->SetMinimum(y4min - y4padding);
+        ht_cl->SetMaximum(y4max + y4padding);
+        pad4->cd();
         ht_cl->Draw("HIST");
         ht3_cl->Draw("HIST SAME");
 
