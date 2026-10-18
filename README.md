@@ -30,6 +30,7 @@ Nel TTree `results` di `results/runXX.root`, ogni evento include `nPrimaries` (n
 Quando sono attivi i grafici dei segnali, il primo pannello di ogni evento mostra anche un cerchio nella posizione x-y di ciascun cluster; il raggio è proporzionale al numero di elettroni rispetto al cluster più popolato dell'evento.
 
 La modalità `analysis` legge il ROOT del run e crea `results/runXX_histograms.root` e `results/runXX_histograms.png`.
+Gli istogrammi includono anche la distanza 3D e la differenza temporale assoluta tra cluster consecutivi, il numero di elettroni per cluster e l'energia per cluster.
 
 La modalità `waveform` esegue `analyse_waveform.py` con `python3` sul file `results/runXX_waveform.root`. Per visualizzare un evento specifico:
 

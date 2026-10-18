@@ -1,11 +1,16 @@
 #include <TCanvas.h>
 #include <TFile.h>
 #include <TH1.h>
+#include <TH1D.h>
 #include <TTree.h>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <iostream>
 #include <string>
+#include <utility>
+#include <vector>
 
 void analyse_results(const char* runNumber) {
   if (!runNumber || std::string(runNumber).empty()) {
@@ -35,9 +40,11 @@ void analyse_results(const char* runNumber) {
     const char* name;
     const char* title;
   };
-  const std::array<const char*, 11> requiredBranches{{
+  const std::array<const char*, 17> requiredBranches{{
       "totalCharge", "q_peak", "t_peak", "t_rise", "t_fall",
-      "x1", "y1", "z1", "dx1", "dy1", "dz1"}};
+      "x1", "y1", "z1", "dx1", "dy1", "dz1",
+      "clusterX", "clusterY", "clusterZ", "clusterT", "clusterE",
+      "clusterElectrons"}};
   const std::array<HistogramSpec, 14> specs{{
       {"totalCharge", "h_totalCharge", "Total charge;Charge [fC];Events"},
       {"abs(q_peak)", "h_q_peak", "Peak amplitude;Amplitude [shaper units];Events"},
@@ -72,7 +79,7 @@ void analyse_results(const char* runNumber) {
 
   outputFile.cd();
   TCanvas canvas("c_results", "Simulation results", 1600, 1200);
-  canvas.Divide(4, 4);
+  canvas.Divide(4, 5);
 
   for (std::size_t i = 0; i < specs.size(); ++i) {
     const auto& spec = specs[i];
@@ -91,6 +98,118 @@ void analyse_results(const char* runNumber) {
     canvas.cd(static_cast<int>(i + 1));
     histogram->Draw("HIST");
     histogram->Write();
+  }
+
+  std::vector<double>* clusterX = nullptr;
+  std::vector<double>* clusterY = nullptr;
+  std::vector<double>* clusterZ = nullptr;
+  std::vector<double>* clusterT = nullptr;
+  std::vector<double>* clusterE = nullptr;
+  std::vector<int>* clusterElectrons = nullptr;
+  if (tree->SetBranchAddress("clusterX", &clusterX) < 0 ||
+      tree->SetBranchAddress("clusterY", &clusterY) < 0 ||
+      tree->SetBranchAddress("clusterZ", &clusterZ) < 0 ||
+      tree->SetBranchAddress("clusterT", &clusterT) < 0 ||
+      tree->SetBranchAddress("clusterE", &clusterE) < 0 ||
+      tree->SetBranchAddress("clusterElectrons", &clusterElectrons) < 0) {
+    std::cerr << "Failed to bind cluster branches in tree 'results'." << std::endl;
+    tree->ResetBranchAddresses();
+    return;
+  }
+
+  std::vector<double> clusterDistances3D;
+  std::vector<double> clusterTimeDifferences;
+  std::vector<double> clusterEnergies;
+  std::vector<double> clusterElectronCounts;
+  for (Long64_t entry = 0; entry < tree->GetEntries(); ++entry) {
+    if (tree->GetEntry(entry) <= 0) {
+      std::cerr << "Failed to read entry " << entry << " from tree 'results'."
+                << std::endl;
+      tree->ResetBranchAddresses();
+      return;
+    }
+    if (!clusterX || !clusterY || !clusterZ || !clusterT || !clusterE ||
+        !clusterElectrons) {
+      std::cerr << "A cluster branch is empty at entry " << entry << "."
+                << std::endl;
+      tree->ResetBranchAddresses();
+      return;
+    }
+
+    const auto clusterCount = clusterX->size();
+    if (clusterY->size() != clusterCount || clusterZ->size() != clusterCount ||
+        clusterT->size() != clusterCount || clusterE->size() != clusterCount ||
+        clusterElectrons->size() != clusterCount) {
+      std::cerr << "Cluster branch sizes do not match at entry " << entry << "."
+                << std::endl;
+      tree->ResetBranchAddresses();
+      return;
+    }
+
+    for (std::size_t cluster = 0; cluster < clusterCount; ++cluster) {
+      clusterEnergies.push_back(clusterE->at(cluster));
+      clusterElectronCounts.push_back(
+          static_cast<double>(clusterElectrons->at(cluster)));
+      if (cluster + 1 == clusterCount) {
+        continue;
+      }
+
+      const double dx = clusterX->at(cluster + 1) - clusterX->at(cluster);
+      const double dy = clusterY->at(cluster + 1) - clusterY->at(cluster);
+      const double dz = clusterZ->at(cluster + 1) - clusterZ->at(cluster);
+      clusterDistances3D.push_back(std::sqrt(dx * dx + dy * dy + dz * dz));
+      clusterTimeDifferences.push_back(
+          std::abs(clusterT->at(cluster + 1) - clusterT->at(cluster)));
+    }
+  }
+  tree->ResetBranchAddresses();
+
+  const auto histogramRange = [](const std::vector<double>& values) {
+    if (values.empty()) {
+      return std::make_pair(0.0, 1.0);
+    }
+    const auto bounds = std::minmax_element(values.begin(), values.end());
+    double minimum = *bounds.first;
+    double maximum = *bounds.second;
+    if (minimum == maximum) {
+      const double padding = std::max(0.5, std::abs(minimum) * 0.05);
+      minimum -= padding;
+      maximum += padding;
+    } else {
+      const double padding = (maximum - minimum) * 0.05;
+      minimum -= padding;
+      maximum += padding;
+    }
+    return std::make_pair(minimum, maximum);
+  };
+
+  const auto makeHistogram = [&histogramRange](
+                                 const char* name, const char* title,
+                                 const std::vector<double>& values) {
+    const auto range = histogramRange(values);
+    auto* histogram = new TH1D(name, title, 100, range.first, range.second);
+    for (const double value : values) {
+      histogram->Fill(value);
+    }
+    return histogram;
+  };
+
+  const std::array<TH1D*, 4> clusterHistograms{{
+      makeHistogram("h_cluster_distance_3d",
+                    "Distance between consecutive clusters;Distance [cm];Pairs",
+                    clusterDistances3D),
+      makeHistogram("h_cluster_time_difference",
+                    "Time difference between consecutive clusters;Time difference [ns];Pairs",
+                    clusterTimeDifferences),
+      makeHistogram("h_cluster_electrons",
+                    "Electrons per cluster;Number of electrons;Clusters",
+                    clusterElectronCounts),
+      makeHistogram("h_cluster_energy", "Cluster energy;Energy [eV];Clusters",
+                    clusterEnergies)}};
+  for (std::size_t i = 0; i < clusterHistograms.size(); ++i) {
+    canvas.cd(static_cast<int>(specs.size() + i + 1));
+    clusterHistograms[i]->Draw("HIST");
+    clusterHistograms[i]->Write();
   }
 
   canvas.Write();
