@@ -831,10 +831,11 @@ int main(int argc, char* argv[]) {
                                             : *std::max_element(
                                                   eventClusterElectrons.begin(),
                                                   eventClusterElectrons.end());
-        if (maxClusterElectrons > 0) {
+        // std::cout << "cluster events: " << 
+        int nPrimaries = clusters_ind.size();
+        if ((nPrimaries > 0) & (maxClusterElectrons > 0)) {
           const double maxClusterRadius = 0.02 * std::min(cell_t, cell_w);
-          for (std::size_t iCluster = 0; iCluster < eventClusterElectrons.size();
-               ++iCluster) {
+          for (std::size_t iCluster = 0; iCluster < nPrimaries; ++iCluster) {
             const double radius = maxClusterRadius * eventClusterElectrons[iCluster] /
                                   maxClusterElectrons;
             TEllipse clusterMarker(
