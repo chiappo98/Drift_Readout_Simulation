@@ -27,6 +27,8 @@ Oltre a `results/runXX.root`, la simulazione scrive `results/runXX_waveform.root
 
 Nel TTree `results` di `results/runXX.root`, ogni evento include `nPrimaries` (numero di cluster primari) e i vettori `clusterX`, `clusterY`, `clusterZ`, `clusterT`, `clusterE` e `clusterElectrons`. Ogni elemento corrisponde allo stesso cluster nell'ordine restituito da Garfield++; `clusterElectrons` contiene il numero di elettroni del cluster.
 
+Quando sono attivi i grafici dei segnali, il primo pannello di ogni evento mostra anche un cerchio nella posizione x-y di ciascun cluster; il raggio è proporzionale al numero di elettroni rispetto al cluster più popolato dell'evento.
+
 La modalità `analysis` legge il ROOT del run e crea `results/runXX_histograms.root` e `results/runXX_histograms.png`.
 
 La modalità `waveform` esegue `analyse_waveform.py` con `python3` sul file `results/runXX_waveform.root`. Per visualizzare un evento specifico:

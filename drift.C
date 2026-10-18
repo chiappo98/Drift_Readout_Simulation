@@ -12,6 +12,7 @@
 #include <TBranch.h>
 #include <TFile.h>
 #include <TTree.h>
+#include <TEllipse.h>
 #include <ROOT/RDataFrame.hxx>
 
 #include <fstream>
@@ -824,6 +825,26 @@ int main(int argc, char* argv[]) {
         driftView_rkf->Plot(twod);
         cellView.SetCanvas((TPad*)c1->GetPad(1));
         cellView.Plot2d();
+
+        const int maxClusterElectrons = eventClusterElectrons.empty()
+                                            ? 0
+                                            : *std::max_element(
+                                                  eventClusterElectrons.begin(),
+                                                  eventClusterElectrons.end());
+        if (maxClusterElectrons > 0) {
+          const double maxClusterRadius = 0.02 * std::min(cell_t, cell_w);
+          for (std::size_t iCluster = 0; iCluster < eventClusterElectrons.size();
+               ++iCluster) {
+            const double radius = maxClusterRadius * eventClusterElectrons[iCluster] /
+                                  maxClusterElectrons;
+            TEllipse clusterMarker(
+                eventClusterX[iCluster], eventClusterY[iCluster], radius, radius);
+            clusterMarker.SetLineColor(kRed + 1);
+            clusterMarker.SetLineWidth(2);
+            clusterMarker.SetFillStyle(0);
+            clusterMarker.DrawClone("same");
+          }
+        }
 
         TLatex* tex = new TLatex();
         tex->SetNDC(true);
