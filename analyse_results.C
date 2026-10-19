@@ -238,24 +238,33 @@ void analyse_results(const char* runNumber) {
   TCanvas canvas("c_results", "Simulation results", 1600, 1200);
   canvas.Divide(4, 5);
 
-  for (std::size_t i = 0; i < specs.size(); ++i) {
-    const auto& spec = specs[i];
-    const std::string expression = std::string(spec.expression) + ">>" + spec.name + "(100)";
-    if (tree->Draw(expression.c_str(), "", "goff") < 0) {
-      std::cerr << "Failed to fill histogram '" << spec.name << "'." << std::endl;
-      return;
-    }
-
-    auto* histogram = dynamic_cast<TH1*>(outputFile.Get(spec.name));
-    if (!histogram) {
-      std::cerr << "Failed to create histogram '" << spec.name << "'." << std::endl;
-      return;
-    }
-    histogram->SetTitle(spec.title);
-    canvas.cd(static_cast<int>(i + 1));
-    histogram->Draw("HIST");
-    histogram->Write();
+  double totalCharge = 0.0;
+  double peakAmplitude = 0.0;
+  double peakTime = 0.0;
+  double riseTime = 0.0;
+  double fallTime = 0.0;
+  double trackX = 0.0;
+  double trackY = 0.0;
+  double trackZ = 0.0;
+  double directionX = 0.0;
+  double directionY = 0.0;
+  double directionZ = 0.0;
+  if (tree->SetBranchAddress("totalCharge", &totalCharge) < 0 ||
+      tree->SetBranchAddress("q_peak", &peakAmplitude) < 0 ||
+      tree->SetBranchAddress("t_peak", &peakTime) < 0 ||
+      tree->SetBranchAddress("t_rise", &riseTime) < 0 ||
+      tree->SetBranchAddress("t_fall", &fallTime) < 0 ||
+      tree->SetBranchAddress("x1", &trackX) < 0 ||
+      tree->SetBranchAddress("y1", &trackY) < 0 ||
+      tree->SetBranchAddress("z1", &trackZ) < 0 ||
+      tree->SetBranchAddress("dx1", &directionX) < 0 ||
+      tree->SetBranchAddress("dy1", &directionY) < 0 ||
+      tree->SetBranchAddress("dz1", &directionZ) < 0) {
+    std::cerr << "Failed to bind scalar branches in tree 'results'." << std::endl;
+    tree->ResetBranchAddresses();
+    return;
   }
+  std::array<std::vector<double>, 14> scalarValues;
 
   std::vector<double>* clusterX = nullptr;
   std::vector<double>* clusterY = nullptr;
@@ -292,6 +301,23 @@ void analyse_results(const char* runNumber) {
       tree->ResetBranchAddresses();
       return;
     }
+
+    const double amplitude = std::abs(peakAmplitude);
+    scalarValues[0].push_back(totalCharge);
+    scalarValues[1].push_back(amplitude);
+    scalarValues[2].push_back(peakTime);
+    scalarValues[3].push_back(riseTime);
+    scalarValues[4].push_back(fallTime);
+    scalarValues[5].push_back(trackX);
+    scalarValues[6].push_back(trackY);
+    scalarValues[7].push_back(trackZ);
+    scalarValues[8].push_back(directionX);
+    scalarValues[9].push_back(directionY);
+    scalarValues[10].push_back(directionZ);
+    scalarValues[11].push_back(
+        totalCharge != 0.0 ? amplitude / totalCharge : 0.0);
+    scalarValues[12].push_back(peakTime - riseTime);
+    scalarValues[13].push_back(fallTime - riseTime);
 
     const auto clusterCount = clusterX->size();
     if (clusterY->size() != clusterCount || clusterZ->size() != clusterCount ||
@@ -350,6 +376,20 @@ void analyse_results(const char* runNumber) {
     }
     return histogram;
   };
+
+  outputFile.cd();
+  for (std::size_t i = 0; i < specs.size(); ++i) {
+    auto* histogram =
+        makeHistogram(specs[i].name, specs[i].title, scalarValues[i]);
+    if (histogram->GetEntries() != static_cast<double>(scalarValues[i].size())) {
+      std::cerr << "Failed to fill all entries in histogram '" << specs[i].name
+                << "'." << std::endl;
+      return;
+    }
+    canvas.cd(static_cast<int>(i + 1));
+    histogram->Draw("HIST");
+    histogram->Write();
+  }
 
   const std::array<TH1D*, 4> clusterHistograms{{
       makeHistogram("h_cluster_distance_3d",
