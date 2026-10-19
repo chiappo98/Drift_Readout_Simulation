@@ -1,9 +1,9 @@
 {
-  "shaper": 1,
+  "shaper": 0,
   "shaping_time_ns": 25,
   "gain_mV/fC": 2.0,
-  "thr_rise": -10,
-  "thr_fall": -10,
+  "thr_rise": 0.5,
+  "thr_fall": 0.5,
   "vSense": 0,
   "vField": -1950,
   "vMylar": -1550,
