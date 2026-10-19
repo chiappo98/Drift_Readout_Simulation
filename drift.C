@@ -838,8 +838,8 @@ int main(int argc, char* argv[]) {
             const double radius =
                 maxClusterRadius * cluster.electrons.size() / maxClusterElectrons;
             TEllipse clusterMarker(cluster.x, cluster.y, radius, radius);
-            clusterMarker.SetLineColor(kRed + 1);
-            clusterMarker.SetLineWidth(2);
+            clusterMarker.SetLineColor(kOrange+1);
+            clusterMarker.SetLineWidth(3);
             clusterMarker.SetFillStyle(0);
             clusterMarker.DrawClone("same");
           }
