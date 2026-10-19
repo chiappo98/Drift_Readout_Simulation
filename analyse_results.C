@@ -2,6 +2,7 @@
 #include <TFile.h>
 #include <TH1.h>
 #include <TH1D.h>
+#include <TPad.h>
 #include <TTree.h>
 
 #include <algorithm>
@@ -157,9 +158,9 @@ void analyse_results(const char* runNumber) {
       const double dx = clusterX->at(cluster + 1) - clusterX->at(cluster);
       const double dy = clusterY->at(cluster + 1) - clusterY->at(cluster);
       const double dz = clusterZ->at(cluster + 1) - clusterZ->at(cluster);
-      clusterDistances3D.push_back(std::sqrt(dx * dx + dy * dy + dz * dz));
+      clusterDistances3D.push_back(std::sqrt(dx * dx + dy * dy + dz * dz) * 10);
       clusterTimeDifferences.push_back(
-          std::abs(clusterT->at(cluster + 1) - clusterT->at(cluster)));
+          std::abs(clusterT->at(cluster + 1) - clusterT->at(cluster)) * 1000);
     }
   }
   tree->ResetBranchAddresses();
@@ -196,10 +197,10 @@ void analyse_results(const char* runNumber) {
 
   const std::array<TH1D*, 4> clusterHistograms{{
       makeHistogram("h_cluster_distance_3d",
-                    "Distance between consecutive clusters;Distance [cm];Pairs",
+                    "Distance between consecutive clusters;Distance [mm];Pairs",
                     clusterDistances3D),
       makeHistogram("h_cluster_time_difference",
-                    "Time difference between consecutive clusters;Time difference [ns];Pairs",
+                    "Time difference between consecutive clusters;Time difference [ps];Pairs",
                     clusterTimeDifferences),
       makeHistogram("h_cluster_electrons",
                     "Electrons per cluster;Number of electrons;Clusters",
@@ -207,7 +208,12 @@ void analyse_results(const char* runNumber) {
       makeHistogram("h_cluster_energy", "Cluster energy;Energy [eV];Clusters",
                     clusterEnergies)}};
   for (std::size_t i = 0; i < clusterHistograms.size(); ++i) {
-    canvas.cd(static_cast<int>(specs.size() + i + 1));
+    auto* pad = canvas.GetPad(static_cast<int>(specs.size() + i + 1));
+    pad->cd();
+    if (i >= 2) {
+      pad->SetLogy();
+      clusterHistograms[i]->SetMinimum(0.5);
+    }
     clusterHistograms[i]->Draw("HIST");
     clusterHistograms[i]->Write();
   }
