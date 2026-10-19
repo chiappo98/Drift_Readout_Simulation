@@ -31,6 +31,7 @@ Quando sono attivi i grafici dei segnali, il primo pannello di ogni evento mostr
 
 La modalità `analysis` legge il ROOT del run e crea `results/runXX_histograms.root` e `results/runXX_histograms.png`.
 Gli istogrammi includono anche la distanza 3D e la differenza temporale assoluta tra cluster consecutivi, il numero di elettroni per cluster e l'energia per cluster.
+La stessa analisi crea inoltre `results/runXX_correlations.root` e `results/runXX_correlations.png`, con i grafici di correlazione tra carica totale, ampiezza di picco, durate temporali e posizione y della traccia.
 
 La modalità `waveform` esegue `analyse_waveform.py` con `python3` sul file `results/runXX_waveform.root`. Per visualizzare un evento specifico:
 

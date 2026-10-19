@@ -2,6 +2,7 @@
 #include <TFile.h>
 #include <TH1.h>
 #include <TH1D.h>
+#include <TH2D.h>
 #include <TPad.h>
 #include <TTree.h>
 
@@ -12,6 +13,161 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+void analyse_correlations(const char* runNumber) {
+  if (!runNumber || std::string(runNumber).empty()) {
+    std::cerr << "A run number is required for correlation analysis." << std::endl;
+    return;
+  }
+
+  const std::string runPath = std::string("results/run") + runNumber;
+  const std::string inputPath = runPath + ".root";
+  const std::string outputPath = runPath + "_correlations.root";
+  const std::string imagePath = runPath + "_correlations.png";
+
+  TFile inputFile(inputPath.c_str(), "READ");
+  if (inputFile.IsZombie()) {
+    std::cerr << "Cannot open input file for correlations: " << inputPath << std::endl;
+    return;
+  }
+
+  auto* tree = dynamic_cast<TTree*>(inputFile.Get("results"));
+  if (!tree) {
+    std::cerr << "Tree 'results' not found in " << inputPath << std::endl;
+    return;
+  }
+
+  const std::array<const char*, 6> requiredBranches{{
+      "totalCharge", "q_peak", "t_rise", "t_fall", "t_peak", "y1"}};
+  for (const auto* branch : requiredBranches) {
+    if (!tree->GetBranch(branch)) {
+      std::cerr << "Branch '" << branch
+                << "' not found for correlation analysis." << std::endl;
+      return;
+    }
+  }
+
+  double totalCharge = 0.0;
+  double peakAmplitude = 0.0;
+  double riseTime = 0.0;
+  double fallTime = 0.0;
+  double peakTime = 0.0;
+  double trackY = 0.0;
+  if (tree->SetBranchAddress("totalCharge", &totalCharge) < 0 ||
+      tree->SetBranchAddress("q_peak", &peakAmplitude) < 0 ||
+      tree->SetBranchAddress("t_rise", &riseTime) < 0 ||
+      tree->SetBranchAddress("t_fall", &fallTime) < 0 ||
+      tree->SetBranchAddress("t_peak", &peakTime) < 0 ||
+      tree->SetBranchAddress("y1", &trackY) < 0) {
+    std::cerr << "Failed to bind branches for correlation analysis." << std::endl;
+    tree->ResetBranchAddresses();
+    return;
+  }
+
+  const std::array<const char*, 8> names{{
+      "h2_totalCharge_vs_peakAmplitude",
+      "h2_totalCharge_vs_fallRise",
+      "h2_peakAmplitude_vs_fallRise",
+      "h2_totalCharge_vs_peakRise",
+      "h2_peakAmplitude_vs_peakRise",
+      "h2_peakAmplitudeOverTotalCharge_vs_trackY",
+      "h2_fallRise_vs_trackY",
+      "h2_peakRise_vs_trackY"}};
+  const std::array<const char*, 8> titles{{
+      "Total charge vs peak amplitude;Total charge [fC];Peak amplitude [shaper units]",
+      "Total charge vs fall-rise time;Total charge [fC];Fall time - rise time [ns]",
+      "Peak amplitude vs fall-rise time;Peak amplitude [shaper units];Fall time - rise time [ns]",
+      "Total charge vs peak-rise time;Total charge [fC];Peak time - rise time [ns]",
+      "Peak amplitude vs peak-rise time;Peak amplitude [shaper units];Peak time - rise time [ns]",
+      "Peak amplitude / total charge vs track y;Track y [cm];Peak amplitude / total charge",
+      "Fall-rise time vs track y;Track y [cm];Fall time - rise time [ns]",
+      "Peak-rise time vs track y;Track y [cm];Peak time - rise time [ns]"}};
+  std::array<std::vector<std::pair<double, double>>, 8> points;
+
+  for (Long64_t entry = 0; entry < tree->GetEntries(); ++entry) {
+    if (tree->GetEntry(entry) <= 0) {
+      std::cerr << "Failed to read entry " << entry
+                << " for correlation analysis." << std::endl;
+      tree->ResetBranchAddresses();
+      return;
+    }
+
+    const double amplitude = std::abs(peakAmplitude);
+    points[0].emplace_back(totalCharge, amplitude);
+
+    if (totalCharge != 0.0) {
+      points[5].emplace_back(trackY, amplitude / totalCharge);
+    }
+    if (riseTime < 0.0) {
+      continue;
+    }
+
+    const double peakRise = peakTime - riseTime;
+    points[3].emplace_back(totalCharge, peakRise);
+    points[4].emplace_back(amplitude, peakRise);
+    points[7].emplace_back(trackY, peakRise);
+
+    if (fallTime < 0.0) {
+      continue;
+    }
+    const double fallRise = fallTime - riseTime;
+    points[1].emplace_back(totalCharge, fallRise);
+    points[2].emplace_back(amplitude, fallRise);
+    points[6].emplace_back(trackY, fallRise);
+  }
+  tree->ResetBranchAddresses();
+
+  const auto axisRange = [](const std::vector<double>& values) {
+    if (values.empty()) {
+      return std::make_pair(0.0, 1.0);
+    }
+    const auto bounds = std::minmax_element(values.begin(), values.end());
+    double minimum = *bounds.first;
+    double maximum = *bounds.second;
+    if (minimum == maximum) {
+      const double padding = std::max(0.5, std::abs(minimum) * 0.05);
+      return std::make_pair(minimum - padding, maximum + padding);
+    }
+    const double padding = (maximum - minimum) * 0.05;
+    return std::make_pair(minimum - padding, maximum + padding);
+  };
+
+  TFile outputFile(outputPath.c_str(), "RECREATE");
+  if (outputFile.IsZombie()) {
+    std::cerr << "Cannot create correlation file: " << outputPath << std::endl;
+    return;
+  }
+  outputFile.cd();
+  TCanvas canvas("c_correlations", "Simulation correlations", 1800, 1000);
+  canvas.Divide(4, 2);
+
+  for (std::size_t i = 0; i < points.size(); ++i) {
+    std::vector<double> xValues;
+    std::vector<double> yValues;
+    xValues.reserve(points[i].size());
+    yValues.reserve(points[i].size());
+    for (const auto& point : points[i]) {
+      xValues.push_back(point.first);
+      yValues.push_back(point.second);
+    }
+    const auto xRange = axisRange(xValues);
+    const auto yRange = axisRange(yValues);
+    auto* histogram = new TH2D(names[i], titles[i], 100, xRange.first,
+                               xRange.second, 100, yRange.first,
+                               yRange.second);
+    for (const auto& point : points[i]) {
+      histogram->Fill(point.first, point.second);
+    }
+    canvas.cd(static_cast<int>(i + 1));
+    histogram->Draw("COLZ");
+    histogram->Write();
+  }
+
+  canvas.Write();
+  canvas.SaveAs(imagePath.c_str());
+  std::cout << "Correlation histograms saved to " << outputPath << std::endl;
+  std::cout << "Correlation canvas saved to " << imagePath << std::endl;
+}
 
 void analyse_results(const char* runNumber) {
   if (!runNumber || std::string(runNumber).empty()) {
@@ -222,4 +378,6 @@ void analyse_results(const char* runNumber) {
   canvas.SaveAs(imagePath.c_str());
   std::cout << "Histograms saved to " << outputPath << std::endl;
   std::cout << "Canvas saved to " << imagePath << std::endl;
+
+  analyse_correlations(runNumber);
 }
