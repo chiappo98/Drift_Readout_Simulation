@@ -834,14 +834,28 @@ int main(int argc, char* argv[]) {
         if (!clusters_ind.empty() && maxClusterElectrons > 0) {
           const double maxClusterRadius = 0.05 * std::min(cell_t, cell_w);
           pad1->cd();
-          for (const auto& cluster : clusters_ind) {
-            const double radius =
-                maxClusterRadius * cluster.electrons.size() / maxClusterElectrons;
-            TEllipse clusterMarker(cluster.x, cluster.y, radius, radius);
-            clusterMarker.SetLineColor(kOrange+1);
-            clusterMarker.SetLineWidth(3);
-            clusterMarker.SetFillStyle(0);
-            clusterMarker.DrawClone("same");
+          pad1->Update();
+          const double xRange = pad1->GetUxmax() - pad1->GetUxmin();
+          const double yRange = pad1->GetUymax() - pad1->GetUymin();
+          const double xPixelsPerUnit =
+              std::abs(pad1->XtoPixel(pad1->GetUxmax()) -
+                       pad1->XtoPixel(pad1->GetUxmin())) /
+              xRange;
+          const double yPixelsPerUnit =
+              std::abs(pad1->YtoPixel(pad1->GetUymax()) -
+                       pad1->YtoPixel(pad1->GetUymin())) /
+              yRange;
+          if (xPixelsPerUnit > 0.0 && yPixelsPerUnit > 0.0) {
+            for (const auto& cluster : clusters_ind) {
+              const double radiusX =
+                  maxClusterRadius * cluster.electrons.size() / maxClusterElectrons;
+              const double radiusY = radiusX * xPixelsPerUnit / yPixelsPerUnit;
+              TEllipse clusterMarker(cluster.x, cluster.y, radiusX, radiusY);
+              clusterMarker.SetLineColor(kRed + 1);
+              clusterMarker.SetLineWidth(2);
+              clusterMarker.SetFillStyle(0);
+              clusterMarker.DrawClone("same");
+            }
           }
           pad1->Modified();
           pad1->Update();
