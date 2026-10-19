@@ -25,7 +25,7 @@ bash run.sh 01 waveform --event 0
 
 Oltre a `results/runXX.root`, la simulazione scrive `results/runXX_waveform.root`: il TTree `waveforms` contiene una entry per evento, con indice `event` e vettore `float` di campioni `waveform`. La scrittura è incrementale, compressa e suddivisa in cluster da circa 30 MB. Si legge con `ROOT::RDataFrame("waveforms", "results/runXX_waveform.root")`.
 
-Nel TTree `results` di `results/runXX.root`, ogni evento include `nPrimaries` (numero di cluster primari) e i vettori `clusterX`, `clusterY`, `clusterZ`, `clusterT`, `clusterE` e `clusterElectrons`. Ogni elemento corrisponde allo stesso cluster nell'ordine restituito da Garfield++; `clusterElectrons` contiene il numero di elettroni del cluster.
+Nel TTree `results` di `results/runXX.root`, ogni evento include `totalCharge` come integrale del valore assoluto della corrente campionata, `nPrimaries` (numero di cluster primari) e i vettori `clusterX`, `clusterY`, `clusterZ`, `clusterT`, `clusterE` e `clusterElectrons`. Ogni elemento corrisponde allo stesso cluster nell'ordine restituito da Garfield++; `clusterElectrons` contiene il numero di elettroni del cluster.
 
 Quando sono attivi i grafici dei segnali, il primo pannello di ogni evento mostra anche un cerchio nella posizione x-y di ciascun cluster; il raggio è proporzionale al numero di elettroni rispetto al cluster più popolato dell'evento.
 

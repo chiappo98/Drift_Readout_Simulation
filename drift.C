@@ -897,8 +897,9 @@ int main(int argc, char* argv[]) {
       std::vector<double> totCharge = {0};
       double totalCharge = 0;
       for (int i = 1; i <= hch->GetNbinsX(); ++i) {
-        totCharge.push_back(totCharge[i-1] - ht->GetBinContent(i)*tStep);
-        totalCharge -= ht->GetBinContent(i)*tStep;
+        const double binCharge = std::abs(ht->GetBinContent(i)) * tStep;
+        totalCharge += binCharge;
+        totCharge.push_back(totalCharge);
         hch -> SetBinContent(i, totCharge[i]);
       }
       if (simulationFlags.signalInduction.printCumulative) {
