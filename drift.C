@@ -711,8 +711,8 @@ int main(int argc, char* argv[]) {
         v_clusterE;
     std::vector<std::vector<int>> v_clusterElectrons;
 
-    double nbins = 1800;
-    double tStep = 1;
+    double nbins = 1800; 
+    double tStep = 1; //ns
     double tStart = 0.0;
 
     TCanvas* c1 = nullptr;
@@ -884,12 +884,11 @@ int main(int argc, char* argv[]) {
         pad2->Modified();
         pad2->Update();
       } else {
+        rawSignal->Reset();
         for (int i = 0; i < nbins; ++i) {
           rawSignal->SetBinContent(i + 1, sensor.GetSignal("s", i));
         }
         ht = rawSignal;
-
-        rawSignal->Reset();
       }
 
       // --- COMPUTE CUMULATIVE CHARGE DISTRIBUTION
