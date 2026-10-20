@@ -190,6 +190,37 @@ SimulationFlags readSimulationFlags(const std::string& configPath) {
           signalInduction};
 }
 
+void writeConfigurationSnapshot(const std::string& runNumber,
+                                const std::string& configPath,
+                                const std::string& simulationConfigPath) {
+  const std::string outputPath =
+      "../results/run" + runNumber + "_configurations.txt";
+  std::ofstream output(outputPath);
+  if (!output) {
+    throw std::runtime_error("Cannot create configuration snapshot: " + outputPath);
+  }
+
+  const auto appendConfig = [&output](const std::string& label,
+                                      const std::string& path) {
+    std::ifstream input(path);
+    if (!input) {
+      throw std::runtime_error("Cannot open configuration file: " + path);
+    }
+    output << "--- " << label << " ---\n";
+    output << input.rdbuf();
+    if (input.bad()) {
+      throw std::runtime_error("Cannot read configuration file: " + path);
+    }
+    output << "\n\n";
+  };
+
+  appendConfig("config.json", configPath);
+  appendConfig("simulation.json", simulationConfigPath);
+  if (!output) {
+    throw std::runtime_error("Failed to write configuration snapshot: " + outputPath);
+  }
+}
+
 // bool readTransferFunction(Sensor& sensor) {
 //   std::ifstream infile;
 //   infile.open("mdt_elx_delta.txt", std::ios::in);
@@ -264,6 +295,12 @@ int main(int argc, char* argv[]) {
     simulationFlags = readSimulationFlags(simulationConfigPath);
   } catch (const std::exception& error) {
     std::cerr << "Configuration error: " << error.what() << std::endl;
+    return 1;
+  }
+  try {
+    writeConfigurationSnapshot(runNumber, configPath, simulationConfigPath);
+  } catch (const std::exception& error) {
+    std::cerr << "Configuration snapshot error: " << error.what() << std::endl;
     return 1;
   }
   shapingTimeNs = config.shapingTimeNs;
