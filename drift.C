@@ -49,6 +49,7 @@ struct SimulationConfig {
   int shaperOrder;
   double shapingTimeNs;
   double gain;
+  double asicSaturationMv;
   double thrRise;
   double thrFall;
   double vSense;
@@ -94,6 +95,8 @@ SimulationConfig readConfig(const std::string& configPath) {
       !config.contains("shaping_time_ns") ||
       !config["shaping_time_ns"].is_number() ||
       !config.contains("gain_mV/fC") || !config["gain_mV/fC"].is_number() ||
+      !config.contains("asic_saturation_mV") ||
+      !config["asic_saturation_mV"].is_number() ||
       !config.contains("thr_rise") || !config["thr_rise"].is_number() ||
       !config.contains("thr_fall") || !config["thr_fall"].is_number() ||
       !config.contains("vSense") || !config["vSense"].is_number() ||
@@ -113,6 +116,7 @@ SimulationConfig readConfig(const std::string& configPath) {
       config["shaper"].get<int>(),
       config["shaping_time_ns"].get<double>(),
       config["gain_mV/fC"].get<double>(),
+      config["asic_saturation_mV"].get<double>(),
       config["thr_rise"].get<double>(),
       config["thr_fall"].get<double>(),
       config["vSense"].get<double>(),
@@ -127,6 +131,7 @@ SimulationConfig readConfig(const std::string& configPath) {
   if ((result.shaperOrder != 0 && result.shaperOrder != 1 && result.shaperOrder != 3) ||
       result.shapingTimeNs < 25.0 || result.shapingTimeNs > 250.0 ||
       result.gain <= 0.0 ||
+      result.asicSaturationMv <= 0.0 ||
       result.cellW <= 0.0 || result.cellY <= 0.0 ||
       result.dSense <= 0.0 || result.dField <= 0.0 ||
       result.argonPercent < 0.0 || result.argonPercent > 100.0 ||
@@ -977,6 +982,7 @@ int main(int argc, char* argv[]) {
       }
       waveformTree.Fill();
 
+      const double gain = config.shaperOrder == 0 ? 1.0 : config.gain;
       double eventPeak = 0.0;
       int eventPeakBin = 0;
       double eventTRise = -1.0;
@@ -1005,6 +1011,9 @@ int main(int argc, char* argv[]) {
         }
       }
 
+      const double peakChargeLimit = config.asicSaturationMv / gain;
+      eventPeak = std::copysign(std::min(std::abs(eventPeak), peakChargeLimit),
+                                eventPeak);
       v_totalCharge.push_back(totalCharge);
       v_q_peak.push_back(eventPeak);
       v_t_peak.push_back(tStart + (eventPeakBin + 0.5) * tStep);
@@ -1019,8 +1028,6 @@ int main(int argc, char* argv[]) {
 
 
       // --- 3. PROCESSED SIGNAL (Electronics Transfer Function) ---
-      const double gain = config.shaperOrder == 0 ? 1.0 : config.gain;
-    
       TH1* ht3 = nullptr;
       TPad* pad3 = nullptr;
       if (plotEventCanvas) {

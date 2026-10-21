@@ -2,6 +2,7 @@
   "shaper": 0,
   "shaping_time_ns": 25,
   "gain_mV/fC": 2.0,
+  "asic_saturation_mV": 600,
   "thr_rise": 0.5,
   "thr_fall": 0.5,
   "vSense": 0,
