@@ -64,7 +64,7 @@ void analyse_correlations(const char* runNumber) {
     return;
   }
 
-  const std::array<const char*, 8> names{{
+  const std::array<const char*, 10> names{{
       "h2_totalCharge_vs_peakAmplitude",
       "h2_totalCharge_vs_fallRise",
       "h2_peakAmplitude_vs_fallRise",
@@ -72,17 +72,21 @@ void analyse_correlations(const char* runNumber) {
       "h2_peakAmplitude_vs_peakRise",
       "h2_peakAmplitudeOverTotalCharge_vs_trackY",
       "h2_fallRise_vs_trackY",
-      "h2_peakRise_vs_trackY"}};
-  const std::array<const char*, 8> titles{{
-      "Total charge vs peak amplitude;Total charge [fC];Peak amplitude [shaper units]",
-      "Total charge vs ToT;Total charge [fC];ToT [ns]",
-      "Peak amplitude vs ToT;Peak amplitude [shaper units];ToT [ns]",
-      "Total charge vs peak-rise time;Total charge [fC];Peak time - rise time [ns]",
-      "Peak amplitude vs peak-rise time;Peak amplitude [shaper units];Peak time - rise time [ns]",
-      "Peak amplitude / total charge vs track y;Track y [cm];Peak amplitude / total charge",
-      "ToT vs track y;Track y [cm];ToT [ns]",
-      "Peak-rise time vs track y;Track y [cm];Peak time - rise time [ns]"}};
-  std::array<std::vector<std::pair<double, double>>, 8> points;
+      "h2_peakRise_vs_trackY",
+      "h2_riseTime_vs_peakTime",
+      "h2_riseTime_vs_trackY"}};
+  const std::array<const char*, 10> titles{{
+      "Peak amplitude vs total charge;Total charge [fC];Peak amplitude [fC]",
+      "ToT vs total charge;Total charge [fC];ToT [ns]",
+      "ToT vs peak amplitude;Peak amplitude [fC];ToT [ns]",
+      "Total charge vs peak time - time-at-threshold;Total charge [fC];t_{peak} - t_{thr} [ns]",
+      "Peak amplitude vs peak time - time-at-threshold;Peak amplitude [fC];t_{peak} - t_{thr} [ns]",
+      "Peak amplitude / total charge vs track y position;y [cm];Peak amplitude / total charge",
+      "ToT vs track y position;y [cm];ToT [ns]",
+      "Peak time - time-at-threshold vs track y position;y [cm];t_{peak} - t_{thr} [ns]",
+      "Time-at-threshold vs peak time;Time-at-threshold [ns];t_{peak} [ns]",
+      "Time-at-threshold vs track y position;y [cm];Time-at-threshold [ns]"}};
+  std::array<std::vector<std::pair<double, double>>, 10> points;
 
   for (Long64_t entry = 0; entry < tree->GetEntries(); ++entry) {
     if (tree->GetEntry(entry) <= 0) {
@@ -102,6 +106,8 @@ void analyse_correlations(const char* runNumber) {
       continue;
     }
 
+    points[8].emplace_back(riseTime, peakTime);
+    points[9].emplace_back(trackY, riseTime);
     const double peakRise = peakTime - riseTime;
     points[3].emplace_back(totalCharge, peakRise);
     points[4].emplace_back(amplitude, peakRise);
@@ -139,7 +145,7 @@ void analyse_correlations(const char* runNumber) {
   }
   outputFile.cd();
   TCanvas canvas("c_correlations", "Simulation correlations", 1800, 1000);
-  canvas.Divide(4, 2);
+  canvas.Divide(5, 2);
 
   for (std::size_t i = 0; i < points.size(); ++i) {
     std::vector<double> xValues;
@@ -204,7 +210,7 @@ void analyse_results(const char* runNumber) {
       "clusterElectrons"}};
   const std::array<HistogramSpec, 14> specs{{
       {"totalCharge", "h_totalCharge", "Total charge;Charge [fC];Events"},
-      {"abs(q_peak)", "h_q_peak", "Peak amplitude;Amplitude [shaper units];Events"},
+      {"abs(q_peak)", "h_q_peak", "Peak amplitude;Amplitude [fC];Events"},
       {"t_peak", "h_t_peak", "Peak time;Time [ns];Events"},
       {"t_rise", "h_t_rise", "Rise threshold crossing;Time [ns];Events"},
       {"t_fall", "h_t_fall", "Fall threshold crossing;Time [ns];Events"},
