@@ -79,12 +79,12 @@ void analyse_correlations(const char* runNumber) {
       "Peak amplitude vs total charge;Total charge [fC];Peak amplitude [fC]",
       "ToT vs total charge;Total charge [fC];ToT [ns]",
       "ToT vs peak amplitude;Peak amplitude [fC];ToT [ns]",
-      "Total charge vs peak time - time-at-threshold;Total charge [fC];t_{peak} - t_{thr} [ns]",
-      "Peak amplitude vs peak time - time-at-threshold;Peak amplitude [fC];t_{peak} - t_{thr} [ns]",
+      "Peak time - time-at-threshold vs total charge;Total charge [fC];t_{peak} - t_{thr} [ns]",
+      "Peak time - time-at-threshold vs peak amplitude;Peak amplitude [fC];t_{peak} - t_{thr} [ns]",
       "Peak amplitude / total charge vs track y position;y [cm];Peak amplitude / total charge",
       "ToT vs track y position;y [cm];ToT [ns]",
       "Peak time - time-at-threshold vs track y position;y [cm];t_{peak} - t_{thr} [ns]",
-      "Time-at-threshold vs peak time;Time-at-threshold [ns];t_{peak} [ns]",
+      "Peak time vs time-at-threshold;Time-at-threshold [ns];t_{peak} [ns]",
       "Time-at-threshold vs track y position;y [cm];Time-at-threshold [ns]"}};
   std::array<std::vector<std::pair<double, double>>, 10> points;
 
