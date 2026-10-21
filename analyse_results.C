@@ -75,12 +75,12 @@ void analyse_correlations(const char* runNumber) {
       "h2_peakRise_vs_trackY"}};
   const std::array<const char*, 8> titles{{
       "Total charge vs peak amplitude;Total charge [fC];Peak amplitude [shaper units]",
-      "Total charge vs fall-rise time;Total charge [fC];Fall time - rise time [ns]",
-      "Peak amplitude vs fall-rise time;Peak amplitude [shaper units];Fall time - rise time [ns]",
+      "Total charge vs ToT;Total charge [fC];ToT [ns]",
+      "Peak amplitude vs ToT;Peak amplitude [shaper units];ToT [ns]",
       "Total charge vs peak-rise time;Total charge [fC];Peak time - rise time [ns]",
       "Peak amplitude vs peak-rise time;Peak amplitude [shaper units];Peak time - rise time [ns]",
       "Peak amplitude / total charge vs track y;Track y [cm];Peak amplitude / total charge",
-      "Fall-rise time vs track y;Track y [cm];Fall time - rise time [ns]",
+      "ToT vs track y;Track y [cm];ToT [ns]",
       "Peak-rise time vs track y;Track y [cm];Peak time - rise time [ns]"}};
   std::array<std::vector<std::pair<double, double>>, 8> points;
 
@@ -219,7 +219,7 @@ void analyse_results(const char* runNumber) {
       {"t_peak - t_rise", "h_t_peak_minus_t_rise",
        "Peak time - rise time;Time difference [ns];Events"},
       {"t_fall - t_rise", "h_t_fall_minus_t_rise",
-       "Fall time - rise time;Time difference [ns];Events"}}};
+       "Time-over-Threshold;ToT[ns];Events"}}};
 
   for (const auto* branch : requiredBranches) {
     if (!tree->GetBranch(branch)) {

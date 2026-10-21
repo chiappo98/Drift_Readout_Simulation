@@ -748,7 +748,7 @@ int main(int argc, char* argv[]) {
         v_clusterE;
     std::vector<std::vector<int>> v_clusterElectrons;
 
-    double nbins = 1800; 
+    double nbins = 4000; 
     double tStep = 1; //ns
     double tStart = 0.0;
 
