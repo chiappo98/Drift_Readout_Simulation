@@ -2,3 +2,5 @@ build/*
 maps/*
 plot/*
 results/*
+json/*
+json
