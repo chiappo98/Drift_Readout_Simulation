@@ -249,11 +249,11 @@ void writeConfigurationSnapshot(const std::string& runNumber,
 
 // This function simulates the response of the front-end electronics (shaper)
 double transfer1ord(double time) {
-  return (time / shapingTimeNs) * exp(1.0 - time / shapingTimeNs);
+  return -1 * (time / shapingTimeNs) * exp(1.0 - time / shapingTimeNs);
 }
 
 double transfer3ord(double time) {
-  return pow(time / shapingTimeNs, 3) * exp(3 * (1.0 - time / shapingTimeNs));
+  return -1 * pow(time / shapingTimeNs, 3) * exp(3 * (1.0 - time / shapingTimeNs));
 }
 
 double transferVTX(double time) {
@@ -753,7 +753,7 @@ int main(int argc, char* argv[]) {
         v_clusterE;
     std::vector<std::vector<int>> v_clusterElectrons;
 
-    double nbins = 4000; 
+    double nbins = 2500; 
     double tStep = 1; //ns
     double tStart = 0.0;
 
@@ -990,18 +990,14 @@ int main(int argc, char* argv[]) {
       bool riseThresholdCrossed = false;
       for (int i = 0; i < nbins; ++i) {
         const double signal = sensor.GetSignal("s", i);
-        const bool isPeak = config.shaperOrder == 0 ? signal > eventPeak : signal < eventPeak;
+        const bool isPeak = signal > eventPeak;
         if (i == 0 || isPeak) {
           eventPeak = signal;
           eventPeakBin = i;
         }
         const double sampleTime = tStart + (i + 0.5) * tStep;
-        const bool crossedRise = config.shaperOrder == 0
-                                     ? signal >= config.thrRise
-                                     : signal <= config.thrRise;
-        const bool crossedFall = config.shaperOrder == 0
-                                     ? signal <= config.thrFall
-                                     : signal >= config.thrFall;
+        const bool crossedRise = signal >= config.thrRise / gain;
+        const bool crossedFall = signal <= config.thrFall / gain;
         if (!riseThresholdCrossed && crossedRise) {
           eventTRise = sampleTime;
           riseThresholdCrossed = true;
@@ -1167,5 +1163,5 @@ int main(int argc, char* argv[]) {
   }
 
 
-  app.Run();
+  // app.Run();
 }
