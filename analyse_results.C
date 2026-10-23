@@ -64,7 +64,7 @@ void analyse_correlations(const char* runNumber) {
     return;
   }
 
-  const std::array<const char*, 10> names{{
+  const std::array<const char*, 14> names{{
       "h2_totalCharge_vs_peakAmplitude",
       "h2_totalCharge_vs_fallRise",
       "h2_peakAmplitude_vs_fallRise",
@@ -74,8 +74,12 @@ void analyse_correlations(const char* runNumber) {
       "h2_fallRise_vs_trackY",
       "h2_peakRise_vs_trackY",
       "h2_riseTime_vs_peakTime",
-      "h2_riseTime_vs_trackY"}};
-  const std::array<const char*, 10> titles{{
+      "h2_riseTime_vs_trackY",
+      "h2_totalCharge_vs_peakAmplitudeOverTotalCharge",
+      "h2_fallRise_vs_peakAmplitudeOverTotalCharge",
+      "h2_totalCharge_vs_riseTime",
+      "h2_peakAmplitude_vs_riseTime"}};
+  const std::array<const char*, 14> titles{{
       "Peak amplitude vs total charge;Total charge [fC];Peak amplitude [fC]",
       "ToT vs total charge;Total charge [fC];ToT [ns]",
       "ToT vs peak amplitude;Peak amplitude [fC];ToT [ns]",
@@ -85,8 +89,12 @@ void analyse_correlations(const char* runNumber) {
       "ToT vs track y position;y [cm];ToT [ns]",
       "Peak time - time-at-threshold vs track y position;y [cm];t_{peak} - t_{thr} [ns]",
       "Peak time vs time-at-threshold;Time-at-threshold [ns];t_{peak} [ns]",
-      "Time-at-threshold vs track y position;y [cm];Time-at-threshold [ns]"}};
-  std::array<std::vector<std::pair<double, double>>, 10> points;
+      "Time-at-threshold vs track y position;y [cm];Time-at-threshold [ns]",
+      "Total charge vs peak amplitude / total charge;Peak amplitude / total charge;Total charge [fC]",
+      "ToT vs peak amplitude / total charge;Peak amplitude / total charge;ToT [ns]",
+      "Total charge vs time-at-threshold;Time-at-threshold [ns];Total charge [fC]",
+      "Peak amplitude vs time-at-threshold;Time-at-threshold [ns];Peak amplitude [fC]"}};
+  std::array<std::vector<std::pair<double, double>>, 14> points;
 
   for (Long64_t entry = 0; entry < tree->GetEntries(); ++entry) {
     if (tree->GetEntry(entry) <= 0) {
@@ -101,6 +109,7 @@ void analyse_correlations(const char* runNumber) {
 
     if (totalCharge != 0.0) {
       points[5].emplace_back(trackY, amplitude / totalCharge);
+      points[10].emplace_back(amplitude / totalCharge, totalCharge);
     }
     if (riseTime < 0.0) {
       continue;
@@ -108,6 +117,8 @@ void analyse_correlations(const char* runNumber) {
 
     points[8].emplace_back(riseTime, peakTime);
     points[9].emplace_back(trackY, riseTime);
+    points[12].emplace_back(riseTime, totalCharge);
+    points[13].emplace_back(riseTime, amplitude);
     const double peakRise = peakTime - riseTime;
     points[3].emplace_back(totalCharge, peakRise);
     points[4].emplace_back(amplitude, peakRise);
@@ -120,6 +131,9 @@ void analyse_correlations(const char* runNumber) {
     points[1].emplace_back(totalCharge, fallRise);
     points[2].emplace_back(amplitude, fallRise);
     points[6].emplace_back(trackY, fallRise);
+    if (totalCharge != 0.0) {
+      points[11].emplace_back(amplitude / totalCharge, fallRise);
+    }
   }
   tree->ResetBranchAddresses();
 
@@ -145,7 +159,7 @@ void analyse_correlations(const char* runNumber) {
   }
   outputFile.cd();
   TCanvas canvas("c_correlations", "Simulation correlations", 1800, 1000);
-  canvas.Divide(5, 2);
+  canvas.Divide(4, 4);
 
   for (std::size_t i = 0; i < points.size(); ++i) {
     std::vector<double> xValues;
