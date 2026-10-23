@@ -865,6 +865,8 @@ int main(int argc, char* argv[]) {
         const bool twod = true;
         driftView_rkf->SetArea(-cell_t/2,-cell_w/2, cell_t/2, cell_w/2);
         driftView_rkf->Plot(twod);
+        driftView_rkf->SetColourElectrons(kBlue);
+        driftView_rkf->SetColourIons(kRed);   
         cellView.SetCanvas(pad1);
         cellView.Plot2d();
 
@@ -903,9 +905,9 @@ int main(int argc, char* argv[]) {
           pad1->Update();
         }
 
-        TLatex* tex = new TLatex();
-        tex->SetNDC(true);
-        tex->DrawLatex(0.2, 0.85, Form("Arrival time spread: %.1f ns", drift_ind->GetArrivalTimeSpread()));
+        // TLatex* tex = new TLatex();
+        // tex->SetNDC(true);
+        // tex->DrawLatex(0.2, 0.85, Form("Arrival time spread: %.1f ns", drift_ind->GetArrivalTimeSpread()));
 
         c1->cd(2);
         gStyle->SetLineWidth(1);
