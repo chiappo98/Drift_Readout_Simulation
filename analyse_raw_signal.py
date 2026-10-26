@@ -53,7 +53,7 @@ def main() -> int:
 
         sample_period_ns = 1.0
         times = array("d", (index * sample_period_ns for index in range(sample_count)))
-        values = array("d", (float(sample) for sample in samples))
+        values = array("d", (-float(sample) for sample in samples))
         graph = ROOT.TGraph(sample_count, times, values)
         graph.SetTitle(
             f"Raw current signal - event {int(tree.event)};"

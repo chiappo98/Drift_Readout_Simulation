@@ -6,7 +6,7 @@
   "simDriftRKF": false,
   "signalInduction": {
     "enabled": true,
-    "number_of_events": 1,
+    "number_of_events": 10,
     "y_min": 0.0,
     "y_max": 1.0,
     "print_cumulative": false,
