@@ -43,10 +43,15 @@ def plot_fourier_spectrum(tree: ROOT.TTree, output_path: Path) -> None:
         raise ValueError("TTree 'raw_signals' contains no valid events")
 
     frequencies_ghz = np.fft.rfftfreq(sample_count, d=sample_period_ns)
+    positive_frequencies = frequencies_ghz[1:]
+    positive_amplitudes = summed_amplitude[1:]
+    if len(positive_frequencies) == 0:
+        raise ValueError("At least two samples per event are required for the spectrum")
+
     graph = ROOT.TGraph(
-        len(frequencies_ghz),
-        array("d", frequencies_ghz),
-        array("d", summed_amplitude),
+        len(positive_frequencies),
+        array("d", positive_frequencies),
+        array("d", positive_amplitudes),
     )
     graph.SetTitle(
         f"Summed raw-current Fourier spectrum ({entries} events);"
@@ -55,6 +60,7 @@ def plot_fourier_spectrum(tree: ROOT.TTree, output_path: Path) -> None:
     graph.SetLineWidth(2)
 
     canvas = ROOT.TCanvas("raw_signal_fourier_canvas", "Fourier spectrum", 1000, 600)
+    canvas.SetLogx()
     graph.Draw("AL")
     canvas.SaveAs(str(output_path))
     print(f"Events included: {entries}; frequency bins: {len(frequencies_ghz)}")
