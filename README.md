@@ -8,6 +8,7 @@ Simulazione del drift e del segnale indotto con Garfield++ e ROOT.
 - Garfield++
 - ROOT con `ROOTDataFrame`
 - PyROOT
+- NumPy
 - `nlohmann_json` (versione 3.2 o successiva)
 
 ## Esecuzione
@@ -45,7 +46,13 @@ bash run.sh 01 waveform --overlay
 
 Senza opzioni lo script salva il grafico dell'evento 0; `--event` seleziona un altro indice da zero. Con `--overlay` seleziona tutte le waveform con un solo massimo locale di ampiezza almeno il 10% del massimo assoluto, allinea il picco a `t = 0` e normalizza l'ampiezza assoluta a 1, quindi salva tutte le curve sovrapposte in un PDF. `--output percorso.pdf` permette di scegliere il nome del file in entrambe le modalità; le opzioni si possono passare attraverso `run.sh`.
 
-La modalità `raw-signal` esegue `analyse_raw_signal.py` sul file `results/runXX_raw_signal.root` e salva il grafico della corrente raw dell'evento 0 in PDF. `--event` seleziona un evento diverso e `--output percorso.pdf` permette di scegliere il file di output.
+La modalità `raw-signal` esegue `analyse_raw_signal.py` sul file `results/runXX_raw_signal.root` e salva il grafico della corrente raw dell'evento 0 in PDF. `--event` seleziona un evento diverso e `--output percorso.pdf` permette di scegliere il file di output. Con `--fourier` calcola lo spettro di ampiezza monolatero di ogni evento, li somma e salva un unico grafico in `results/runXX_raw_signal_fourier_spectrum.pdf`:
+
+```sh
+bash run.sh 01 raw-signal --fourier
+```
+
+La frequenza è espressa in GHz (campionamento a 1 ns); l'ampiezza rappresentata è la somma degli spettri dei singoli eventi.
 
 ## Configurazione
 
