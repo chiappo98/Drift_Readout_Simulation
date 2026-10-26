@@ -50,4 +50,17 @@ Senza opzioni lo script salva il grafico dell'evento 0; `--event` seleziona un a
 
 Il parametro `shaper` accetta `0` (VTX), `1` o `3`. Lo shaper VTX usa `transferVTX`: per `t > t0` calcola `gain * ((t - t0) / (n * tau))^n * exp(n - (t - t0) / tau)`, altrimenti restituisce zero. I parametri sono `gain = -39.6/40 mV/fC`, `n = 3.34`, `tau = 3.06 ns` e `t0 = 1.463 ns`. L'uscita è in mV: imposta `thr_rise` e `thr_fall` in mV. `shaping_time_ns` si applica solo agli shaper 1 e 3, le cui soglie restano in fC.
 
+La macro ROOT `utils/plot_transfer_functions.C` sovrappone le risposte VTX e degli shaper di primo e terzo ordine, normalizzate al rispettivo picco per confrontarne la forma. Il tempo di shaping predefinito è 25 ns; per modificarlo e generare `plot/transfer_functions.png`:
+
+```sh
+root -l -q 'utils/plot_transfer_functions.C(50.0)'
+```
+
+La macro `utils/simulate_shaper3_square_pulse.C` simula 10.000 eventi, ciascuno con un treno di 400 impulsi quadri da 0,4 µA e 1 ns. Per ogni evento, il ritardo `delayNs` è uniforme tra 0 e 100 ns e i tempi di arrivo dei singoli impulsi sono uniformi tra `delayNs` e `delayNs + TimeSpreadNs`. Convolge il treno con lo shaper di terzo ordine (tempo di shaping predefinito 25 ns e guadagno 2 mV/fC), misura il primo attraversamento della soglia di 1 mV e lo rappresenta in funzione della posizione `delayNs × 50 µm/ns`. `TimeSpreadNs` è il terzo argomento della macro e vale 100 ns per default. Salva il grafico PNG e un file ROOT con nomi `plot/DTrelation_tauXX_spreadYY` (dove `XX` e `YY` sono tempo di shaping e TimeSpread in ns, con `p` per eventuali decimali); il ROOT contiene il grafico, la waveform del primo evento e i dati dei 10.000 eventi:
+
+```sh
+root -l -q 'utils/simulate_shaper3_square_pulse.C()'
+root -l -q 'utils/simulate_shaper3_square_pulse.C(25.0, 2.0, 50.0)'
+```
+
 I percorsi dei file `.gas` e delle mobilità ioniche in `drift.C` devono essere disponibili e, se necessario, adattati all'ambiente locale.
