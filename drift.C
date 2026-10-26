@@ -23,6 +23,7 @@
 #include <vector>
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <random>
 #include <utility>
 
@@ -70,6 +71,8 @@ struct SignalInductionConfig {
   double yMax;
   bool printCumulative;
   bool plotSignals;
+  bool saveWaveforms;
+  bool saveRawSignals;
 };
 
 struct SimulationFlags {
@@ -168,7 +171,11 @@ SimulationFlags readSimulationFlags(const std::string& configPath) {
       !config["signalInduction"].contains("print_cumulative") ||
       !config["signalInduction"]["print_cumulative"].is_boolean() ||
       !config["signalInduction"].contains("plot_signals") ||
-      !config["signalInduction"]["plot_signals"].is_boolean()) {
+      !config["signalInduction"]["plot_signals"].is_boolean() ||
+      !config["signalInduction"].contains("save_waveforms") ||
+      !config["signalInduction"]["save_waveforms"].is_boolean() ||
+      !config["signalInduction"].contains("save_raw_signals") ||
+      !config["signalInduction"]["save_raw_signals"].is_boolean()) {
     throw std::runtime_error(
         "Simulation config must define the five mode flags and all signalInduction settings with the expected types.");
   }
@@ -179,7 +186,9 @@ SimulationFlags readSimulationFlags(const std::string& configPath) {
       config["signalInduction"]["y_min"].get<double>(),
       config["signalInduction"]["y_max"].get<double>(),
       config["signalInduction"]["print_cumulative"].get<bool>(),
-      config["signalInduction"]["plot_signals"].get<bool>()};
+      config["signalInduction"]["plot_signals"].get<bool>(),
+      config["signalInduction"]["save_waveforms"].get<bool>(),
+      config["signalInduction"]["save_raw_signals"].get<bool>()};
     if (signalInduction.numberOfEvents < 1 || signalInduction.yMin < 0.0 ||
       signalInduction.yMin > 1.0 || signalInduction.yMax < 0.0 ||
       signalInduction.yMax > 1.0 || signalInduction.yMin > signalInduction.yMax) {
@@ -762,21 +771,46 @@ int main(int argc, char* argv[]) {
     TH1D* rawSignal = new TH1D("rawSignal", "Raw signal;Time [ns];Signal [fC]", static_cast<int>(nbins), tStart, tStart + nbins * tStep);
     TH1D* shapedSignal = new TH1D("shapedSignal", "Shaped signal;Time [ns];Signal [fC]", static_cast<int>(nbins), tStart, tStart + nbins * tStep);
 
+    const bool saveWaveforms = simulationFlags.signalInduction.saveWaveforms;
+    const bool saveRawSignals = simulationFlags.signalInduction.saveRawSignals;
     const std::string waveformPath = "../results/run" + runNumber + "_waveform.root";
-    TFile waveformFile(waveformPath.c_str(), "RECREATE");
-    if (waveformFile.IsZombie()) {
-      std::cerr << "Cannot create waveform file: " << waveformPath << std::endl;
-      return 1;
-    }
-    waveformFile.SetCompressionLevel(4);
-    waveformFile.cd();
-    TTree waveformTree("waveforms", "Shaped waveform for each event");
-    waveformTree.SetAutoFlush(-30000000);
+    const std::string rawSignalPath = "../results/run" + runNumber + "_raw_signal.root";
+    std::unique_ptr<TFile> waveformFile;
+    std::unique_ptr<TFile> rawSignalFile;
+    TTree* waveformTree = nullptr;
+    TTree* rawSignalTree = nullptr;
     ULong64_t waveformEvent = 0;
+    ULong64_t rawSignalEvent = 0;
     std::vector<float> shapedWaveform;
-    waveformTree.Branch("event", &waveformEvent);
-    TBranch* waveformBranch = waveformTree.Branch("waveform", &shapedWaveform);
-    waveformBranch->SetBasketSize(64 * 1024);
+    std::vector<float> rawSignalSamples;
+    if (saveWaveforms) {
+      waveformFile = std::make_unique<TFile>(waveformPath.c_str(), "RECREATE");
+      if (waveformFile->IsZombie()) {
+        std::cerr << "Cannot create waveform file: " << waveformPath << std::endl;
+        return 1;
+      }
+      waveformFile->SetCompressionLevel(4);
+      waveformFile->cd();
+      waveformTree = new TTree("waveforms", "Shaped waveform for each event");
+      waveformTree->SetAutoFlush(-30000000);
+      waveformTree->Branch("event", &waveformEvent);
+      TBranch* waveformBranch = waveformTree->Branch("waveform", &shapedWaveform);
+      waveformBranch->SetBasketSize(64 * 1024);
+    }
+    if (saveRawSignals) {
+      rawSignalFile = std::make_unique<TFile>(rawSignalPath.c_str(), "RECREATE");
+      if (rawSignalFile->IsZombie()) {
+        std::cerr << "Cannot create raw signal file: " << rawSignalPath << std::endl;
+        return 1;
+      }
+      rawSignalFile->SetCompressionLevel(4);
+      rawSignalFile->cd();
+      rawSignalTree = new TTree("raw_signals", "Raw current signal for each event");
+      rawSignalTree->SetAutoFlush(-30000000);
+      rawSignalTree->Branch("event", &rawSignalEvent);
+      TBranch* rawSignalBranch = rawSignalTree->Branch("raw_signal", &rawSignalSamples);
+      rawSignalBranch->SetBasketSize(64 * 1024);
+    }
 
     sensor.SetTimeWindow(tStart, tStep, nbins);
 
@@ -854,6 +888,16 @@ int main(int argc, char* argv[]) {
       v_clusterT.push_back(std::move(eventClusterT));
       v_clusterE.push_back(std::move(eventClusterE));
       v_clusterElectrons.push_back(std::move(eventClusterElectrons));
+
+      if (saveRawSignals) {
+        rawSignalEvent = static_cast<ULong64_t>(iEvent);
+        rawSignalSamples.clear();
+        rawSignalSamples.reserve(static_cast<std::size_t>(nbins));
+        for (int i = 0; i < nbins; ++i) {
+          rawSignalSamples.push_back(static_cast<float>(sensor.GetSignal("s", i)));
+        }
+        rawSignalTree->Fill();
+      }
 
       if (plotEventCanvas) {
         const std::string canvasName = "c1_event_" + std::to_string(iEvent + 1);
@@ -976,13 +1020,15 @@ int main(int argc, char* argv[]) {
                      : config.shaperOrder == 1 ? transfer1ord : transfer3ord;
       sensor.SetTransferFunction(transferFunction);
       sensor.ConvoluteSignals();
-      waveformEvent = static_cast<ULong64_t>(iEvent);
-      shapedWaveform.clear();
-      shapedWaveform.reserve(static_cast<std::size_t>(nbins));
-      for (int i = 0; i < nbins; ++i) {
-        shapedWaveform.push_back(static_cast<float>(sensor.GetSignal("s", i)));
+      if (saveWaveforms) {
+        waveformEvent = static_cast<ULong64_t>(iEvent);
+        shapedWaveform.clear();
+        shapedWaveform.reserve(static_cast<std::size_t>(nbins));
+        for (int i = 0; i < nbins; ++i) {
+          shapedWaveform.push_back(static_cast<float>(sensor.GetSignal("s", i)));
+        }
+        waveformTree->Fill();
       }
-      waveformTree.Fill();
 
       const double gain = config.shaperOrder == 0 ? 1.0 : config.gain;
       double eventPeak = 0.0;
@@ -1157,10 +1203,18 @@ int main(int argc, char* argv[]) {
                 .Define("dz1", [&](ULong64_t i){ return v_dz1[i]; }, {"rdfentry_"});
     const std::string outputPath = "../results/run" + runNumber + ".root";
     df2.Snapshot("results", outputPath); // salva il TTree del run
-    waveformFile.cd();
-    waveformTree.Write();
-    waveformFile.Close();
-    std::cout << "Waveforms saved to " << waveformPath << std::endl;
+    if (saveWaveforms) {
+      waveformFile->cd();
+      waveformTree->Write();
+      waveformFile->Close();
+      std::cout << "Waveforms saved to " << waveformPath << std::endl;
+    }
+    if (saveRawSignals) {
+      rawSignalFile->cd();
+      rawSignalTree->Write();
+      rawSignalFile->Close();
+      std::cout << "Raw signals saved to " << rawSignalPath << std::endl;
+    }
     
   }
 

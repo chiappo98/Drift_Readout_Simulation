@@ -5,7 +5,7 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build}"
 
 if (($# == 0)) || [[ ! "$1" =~ ^[0-9]+$ ]]; then
-  echo "Usage: $0 <run_number> [simulation|analysis|waveform] [config.json [simulation.json]]" >&2
+  echo "Usage: $0 <run_number> [simulation|analysis|waveform|raw-signal] [config.json [simulation.json]]" >&2
   exit 2
 fi
 
@@ -107,8 +107,16 @@ case "$MODE" in
     waveform_file="$ROOT_DIR/results/run${RUN_NUMBER}_waveform.root"
     python3 "$ROOT_DIR/analyse_waveform.py" "$waveform_file" "$@"
     ;;
+  raw-signal)
+    command -v python3 >/dev/null 2>&1 || {
+      echo "python3 executable not found in PATH." >&2
+      exit 1
+    }
+    raw_signal_file="$ROOT_DIR/results/run${RUN_NUMBER}_raw_signal.root"
+    python3 "$ROOT_DIR/analyse_raw_signal.py" "$raw_signal_file" "$@"
+    ;;
   *)
-    echo "Usage: $0 <run_number> [simulation|analysis|waveform] [config.json [simulation.json]]" >&2
+    echo "Usage: $0 <run_number> [simulation|analysis|waveform|raw-signal] [config.json [simulation.json]]" >&2
     exit 2
     ;;
 esac

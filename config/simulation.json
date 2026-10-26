@@ -10,6 +10,8 @@
     "y_min": 0.0,
     "y_max": 1.0,
     "print_cumulative": false,
-    "plot_signals": true
+    "plot_signals": true,
+    "save_waveforms": true,
+    "save_raw_signals": true
   }
 }
