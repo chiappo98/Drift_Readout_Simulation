@@ -64,7 +64,7 @@ void analyse_correlations(const char* runNumber) {
     return;
   }
 
-  const std::array<const char*, 14> names{{
+  const std::array<const char*, 16> names{{
       "h2_totalCharge_vs_peakAmplitude",
       "h2_totalCharge_vs_fallRise",
       "h2_peakAmplitude_vs_fallRise",
@@ -78,8 +78,10 @@ void analyse_correlations(const char* runNumber) {
       "h2_totalCharge_vs_peakAmplitudeOverTotalCharge",
       "h2_fallRise_vs_peakAmplitudeOverTotalCharge",
       "h2_totalCharge_vs_riseTime",
-      "h2_peakAmplitude_vs_riseTime"}};
-  const std::array<const char*, 14> titles{{
+      "h2_peakAmplitude_vs_riseTime",
+      "h2_peakAmplitude_vs_trackY",
+      "h2_totalCharge_vs_trackY"}};
+  const std::array<const char*, 16> titles{{
       "Peak amplitude vs total charge;Total charge [fC];Peak amplitude [fC]",
       "ToT vs total charge;Total charge [fC];ToT [ns]",
       "ToT vs peak amplitude;Peak amplitude [fC];ToT [ns]",
@@ -93,8 +95,10 @@ void analyse_correlations(const char* runNumber) {
       "Total charge vs peak amplitude / total charge;Peak amplitude / total charge;Total charge [fC]",
       "ToT vs peak amplitude / total charge;Peak amplitude / total charge;ToT [ns]",
       "Total charge vs time-at-threshold;Time-at-threshold [ns];Total charge [fC]",
-      "Peak amplitude vs time-at-threshold;Time-at-threshold [ns];Peak amplitude [fC]"}};
-  std::array<std::vector<std::pair<double, double>>, 14> points;
+      "Peak amplitude vs time-at-threshold;Time-at-threshold [ns];Peak amplitude [fC]",
+      "Peak amplitude vs track y position;y [cm];Peak amplitude [fC]",
+      "Total charge vs track y position;y [cm];Total charge [fC]"}};
+  std::array<std::vector<std::pair<double, double>>, 16> points;
 
   for (Long64_t entry = 0; entry < tree->GetEntries(); ++entry) {
     if (tree->GetEntry(entry) <= 0) {
@@ -106,6 +110,8 @@ void analyse_correlations(const char* runNumber) {
 
     const double amplitude = std::abs(peakAmplitude);
     points[0].emplace_back(totalCharge, amplitude);
+    points[14].emplace_back(trackY, amplitude);
+    points[15].emplace_back(trackY, totalCharge);
 
     if (totalCharge != 0.0) {
       points[5].emplace_back(trackY, amplitude / totalCharge);
