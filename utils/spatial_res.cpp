@@ -453,7 +453,7 @@ void spatial_res(const char* runNumber) {
     residualHistograms[bin] = std::make_unique<TH1D>(
         ("trackY_residual_bin_" + twoDigits(bin + 1)).c_str(),
         (title.str() + ";Reconstructed y - true y [cm];Events").c_str(),
-        120, -0.65, 0.65);
+        390, -0.65, 0.65);
     residualHistograms[bin]->SetDirectory(nullptr);
     residualHistograms[bin]->SetLineColor(kBlue + 1);
     residualHistograms[bin]->SetFillColor(kAzure - 9);
@@ -528,13 +528,13 @@ void spatial_res(const char* runNumber) {
       const double meanStart = residualHistogram.GetXaxis()->GetBinCenter(
           residualHistogram.GetMaximumBin());
       TF1 residualFit(("residual_crystal_ball_fit_" + twoDigits(bin + 1)).c_str(),
-                      crystalBall, -0.65, 0.65, 5);
+                      crystalBall, -0.3, 0.3, 5);
       residualFit.SetParNames("Amplitude", "MPV", "Sigma", "Alpha", "N");
       residualFit.SetParameters(residualHistogram.GetMaximum(), meanStart,
                                 sigmaStart, 1.5, 3.0);
       residualFit.SetParLimits(0, 0.0,
                                residualHistogram.GetMaximum() * 100.0);
-      residualFit.SetParLimits(1, -0.65, 0.65);
+      residualFit.SetParLimits(1, -0.3, 0.3);
       residualFit.SetParLimits(2, binWidth * 0.1, 1.3);
       residualFit.SetParLimits(3, 0.1, 10.0);
       residualFit.SetParLimits(4, 1.01, 100.0);
