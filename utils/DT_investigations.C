@@ -4,6 +4,7 @@
 #include <TGraph.h>
 #include <TLine.h>
 #include <TPad.h>
+#include <TPaveText.h>
 #include <TTree.h>
 
 #include <cmath>
@@ -187,7 +188,7 @@ void DT_investigations(const char* runNumber, double tRiseMin,
     TGraph shapedGraph(static_cast<int>(waveform->size()), times.data(),
                        shapedSamples.data());
     shapedGraph.SetTitle(shapedTitle.str().c_str());
-    shapedGraph.SetLimits(0.0, 1000.0);
+    shapedGraph.GetXaxis()->SetLimits(0.0, 1000.0);
     shapedGraph.SetLineColor(kBlue + static_cast<int>(plottedEvents % 5));
     shapedGraph.SetLineWidth(1);
     canvas->Clear();
@@ -202,10 +203,18 @@ void DT_investigations(const char* runNumber, double tRiseMin,
     tRiseLine.SetLineWidth(2);
     tRiseLine.Draw("same");
 
+    auto* riseText = new TPaveText(0.55, 0.62, 0.85, 0.82, "NDC");
+    riseText->SetBorderSize(0);
+    riseText->SetFillColor(0);
+    riseText->SetTextAlign(12);
+    riseText->AddText(Form("t_{rise} = %.2f ns", selectedEvent.tRise));
+    riseText->AddText(Form("distance = %.2f cm", selectedEvent.trackY));
+    riseText->Draw();
+
     TGraph rawGraph(static_cast<int>(rawSignal->size()), times.data(),
                     rawSamples.data());
     rawGraph.SetTitle("Raw signal;Time [ns];Current [native units]");
-    rawGraph.SetLimits(0.0, 1000.0);
+    rawGraph.GetXaxis()->SetLimits(0.0, 1000.0);
     rawGraph.SetLineColor(kRed + 1);
     rawGraph.SetLineWidth(1);
     canvas->cd(2);
