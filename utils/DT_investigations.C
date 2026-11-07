@@ -2,9 +2,12 @@
 #include <TColor.h>
 #include <TFile.h>
 #include <TGraph.h>
+#include <TLine.h>
+#include <TPad.h>
 #include <TTree.h>
 
 #include <cmath>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -135,7 +138,6 @@ void DT_investigations(const char* runNumber, double tRiseMin,
   const std::string canvasName =
       std::string("c_DT_investigations_run") + runNumber;
   auto* canvas = new TCanvas(canvasName.c_str(), "Selected waveforms", 1100, 900);
-  canvas->Divide(1, 2);
   std::size_t plottedEvents = 0;
   std::size_t matchedEvents = 0;
   for (Long64_t entry = 0; entry < waveformTree->GetEntries(); ++entry) {
@@ -179,7 +181,8 @@ void DT_investigations(const char* runNumber, double tRiseMin,
     }
     const auto& selectedEvent = selected->second;
     std::ostringstream shapedTitle;
-    shapedTitle << "Event " << eventId << ", trackY = " << selectedEvent.trackY
+    shapedTitle << "Event " << eventId << ", trackY = " << std::fixed
+                << std::setprecision(2) << selectedEvent.trackY
                 << " cm;Time [ns];Shaped signal [native units]";
     TGraph shapedGraph(static_cast<int>(waveform->size()), times.data(),
                        shapedSamples.data());
@@ -187,8 +190,17 @@ void DT_investigations(const char* runNumber, double tRiseMin,
     shapedGraph.SetLimits(0.0, 1000.0);
     shapedGraph.SetLineColor(kBlue + static_cast<int>(plottedEvents % 5));
     shapedGraph.SetLineWidth(1);
-    canvas->cd(1);
+    canvas->Clear();
+    canvas->Divide(1, 2);
+    TPad* shapedPad = static_cast<TPad*>(canvas->cd(1));
     shapedGraph.Draw("AL");
+    shapedPad->Update();
+    TLine tRiseLine(selectedEvent.tRise, shapedPad->GetUymin(),
+                    selectedEvent.tRise, shapedPad->GetUymax());
+    tRiseLine.SetLineColor(kRed);
+    tRiseLine.SetLineStyle(2);
+    tRiseLine.SetLineWidth(2);
+    tRiseLine.Draw("same");
 
     TGraph rawGraph(static_cast<int>(rawSignal->size()), times.data(),
                     rawSamples.data());
