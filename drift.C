@@ -796,6 +796,9 @@ int main(int argc, char* argv[]) {
       waveformTree->Branch("event", &waveformEvent);
       TBranch* waveformBranch = waveformTree->Branch("waveform", &shapedWaveform);
       waveformBranch->SetBasketSize(64 * 1024);
+      TBranch* rawSignalBranch =
+          waveformTree->Branch("raw_signal", &rawSignalSamples);
+      rawSignalBranch->SetBasketSize(64 * 1024);
     }
     if (saveRawSignals) {
       rawSignalFile = std::make_unique<TFile>(rawSignalPath.c_str(), "RECREATE");
@@ -889,14 +892,16 @@ int main(int argc, char* argv[]) {
       v_clusterE.push_back(std::move(eventClusterE));
       v_clusterElectrons.push_back(std::move(eventClusterElectrons));
 
-      if (saveRawSignals) {
-        rawSignalEvent = static_cast<ULong64_t>(iEvent);
+      if (saveRawSignals || saveWaveforms) {
         rawSignalSamples.clear();
         rawSignalSamples.reserve(static_cast<std::size_t>(nbins));
         for (int i = 0; i < nbins; ++i) {
           rawSignalSamples.push_back(static_cast<float>(sensor.GetSignal("s", i)));
         }
-        rawSignalTree->Fill();
+        if (saveRawSignals) {
+          rawSignalEvent = static_cast<ULong64_t>(iEvent + 1);
+          rawSignalTree->Fill();
+        }
       }
 
       if (plotEventCanvas) {
@@ -1021,7 +1026,7 @@ int main(int argc, char* argv[]) {
       sensor.SetTransferFunction(transferFunction);
       sensor.ConvoluteSignals();
       if (saveWaveforms) {
-        waveformEvent = static_cast<ULong64_t>(iEvent);
+        waveformEvent = static_cast<ULong64_t>(iEvent + 1);
         shapedWaveform.clear();
         shapedWaveform.reserve(static_cast<std::size_t>(nbins));
         for (int i = 0; i < nbins; ++i) {
@@ -1183,7 +1188,8 @@ int main(int argc, char* argv[]) {
 
     // dopo il loop, crea l'RDataFrame dai vettori
     ROOT::RDataFrame df(v_totalCharge.size());
-    auto df2 = df.Define("totalCharge", [&](ULong64_t i){ return v_totalCharge[i]; }, {"rdfentry_"})
+    auto df2 = df.Define("event", [](ULong64_t i){ return i + 1; }, {"rdfentry_"})
+                .Define("totalCharge", [&](ULong64_t i){ return v_totalCharge[i]; }, {"rdfentry_"})
                 .Define("q_peak",      [&](ULong64_t i){ return v_q_peak[i]; }, {"rdfentry_"})
                 .Define("nPrimaries",  [&](ULong64_t i){ return v_nPrimaries[i]; }, {"rdfentry_"})
                 .Define("clusterX",    [&](ULong64_t i){ return v_clusterX[i]; }, {"rdfentry_"})
