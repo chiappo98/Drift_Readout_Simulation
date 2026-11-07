@@ -184,6 +184,7 @@ void DT_investigations(const char* runNumber, double tRiseMin,
     TGraph shapedGraph(static_cast<int>(waveform->size()), times.data(),
                        shapedSamples.data());
     shapedGraph.SetTitle(shapedTitle.str().c_str());
+    shapedGraph.SetLimits(0.0, 1000.0);
     shapedGraph.SetLineColor(kBlue + static_cast<int>(plottedEvents % 5));
     shapedGraph.SetLineWidth(1);
     canvas->cd(1);
@@ -192,6 +193,7 @@ void DT_investigations(const char* runNumber, double tRiseMin,
     TGraph rawGraph(static_cast<int>(rawSignal->size()), times.data(),
                     rawSamples.data());
     rawGraph.SetTitle("Raw signal;Time [ns];Current [native units]");
+    rawGraph.SetLimits(0.0, 1000.0);
     rawGraph.SetLineColor(kRed + 1);
     rawGraph.SetLineWidth(1);
     canvas->cd(2);
