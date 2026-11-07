@@ -950,6 +950,15 @@ int main(int argc, char* argv[]) {
               clusterMarker.DrawClone("same");
             }
           }
+
+          TLatex* texCluster = new TLatex();
+          texCluster->SetNDC(true);
+          texCluster->SetTextColor(kBlack);
+          texCluster->SetTextSize(0.035);
+          texCluster->DrawLatex(0.3, 0.72,
+                               Form("Largest cluster: %d electrons",
+                                    maxClusterElectrons));
+
           pad1->Modified();
           pad1->Update();
         }
@@ -970,6 +979,9 @@ int main(int argc, char* argv[]) {
         ht->SetLineWidth(2);
         he->SetLineWidth(2);
         hi->SetLineWidth(2);
+        ht->GetXaxis()->SetRangeUser(0.0, 1500.0);
+        he->GetXaxis()->SetRangeUser(0.0, 1500.0);
+        hi->GetXaxis()->SetRangeUser(0.0, 1500.0);
         leg->AddEntry(ht, "total", "l");
         leg->AddEntry(he, "electron", "l");
         leg->AddEntry(hi, "ion", "l");
@@ -1155,6 +1167,8 @@ int main(int argc, char* argv[]) {
         const double y4padding = y4range > 0.0 ? 0.1 * y4range : 1.0;
         ht_cl->SetMinimum(y4min - y4padding);
         ht_cl->SetMaximum(y4max + y4padding);
+        ht_cl->GetXaxis()->SetRangeUser(0.0, 1500.0);
+        ht3_cl->GetXaxis()->SetRangeUser(0.0, 1500.0);
         pad4->cd();
         ht_cl->Draw("HIST");
         ht3_cl->Draw("HIST SAME");
