@@ -27,7 +27,7 @@ bash run.sh 01 raw-signal --event 0
 
 Ogni simulazione salva in `results/runXX_configurations.txt` il contenuto dei due JSON effettivamente utilizzati (`config.json` e `simulation.json`), con intestazioni che li distinguono.
 
-Oltre a `results/runXX.root`, per impostazione predefinita la simulazione scrive `results/runXX_waveform.root` e `results/runXX_raw_signal.root`. Il TTree `waveforms` contiene una entry per evento, con indice `event` e vettore `float` di campioni `waveform` dopo lo shaper. Il TTree `raw_signals` nel file raw contiene una entry per evento, con indice `event` e vettore `float` di campioni `raw_signal` della corrente prima dello shaper. Entrambi i file sono scritti in modo incrementale, compresso e suddiviso in cluster da circa 30 MB. Si leggono con `ROOT::RDataFrame("waveforms", "results/runXX_waveform.root")` e `ROOT::RDataFrame("raw_signals", "results/runXX_raw_signal.root")`.
+Oltre a `results/runXX.root`, per impostazione predefinita la simulazione scrive `results/runXX_waveform.root` e `results/runXX_raw_signal.root`. Il TTree `results` contiene il numero progressivo `event`, da 1 a N. Il TTree `waveforms` contiene una entry per evento, con lo stesso numero `event`, il vettore `float` `waveform` dopo lo shaper e il vettore `float` `raw_signal` prima dello shaper. Il TTree `raw_signals` nel file raw contiene una entry per evento, con lo stesso numero `event` e il vettore `float` di campioni `raw_signal`. I file dei segnali sono scritti in modo incrementale, compresso e suddiviso in cluster da circa 30 MB. Si leggono con `ROOT::RDataFrame("waveforms", "results/runXX_waveform.root")` e `ROOT::RDataFrame("raw_signals", "results/runXX_raw_signal.root")`.
 
 Nel TTree `results` di `results/runXX.root`, ogni evento include `totalCharge` come integrale del valore assoluto della corrente campionata, `nPrimaries` (numero di cluster primari) e i vettori `clusterX`, `clusterY`, `clusterZ`, `clusterT`, `clusterE` e `clusterElectrons`. Ogni elemento corrisponde allo stesso cluster nell'ordine restituito da Garfield++; `clusterElectrons` contiene il numero di elettroni del cluster.
 
@@ -48,6 +48,12 @@ La modalità `waveform` esegue `analyse_waveform.py` con `python3` sul file `res
 ```sh
 bash run.sh 01 waveform --event 0
 bash run.sh 01 waveform --overlay
+```
+
+La macro `utils/DT_investigations.C` cerca nel run le waveform degli eventi che soddisfano gli intervalli inclusivi di `t_rise` e `trackY` (`y1` nel TTree `results`). Abbina gli eventi tramite il branch `event` e salva in `results/runXX_selectedWF.pdf` al massimo 40 pagine, una per evento. Ogni pagina mostra la waveform dopo lo shaper e il `raw_signal`, con il valore di `trackY`:
+
+```sh
+root -l -q 'utils/DT_investigations.C("01", 100.0, 500.0, -0.65, 0.0)'
 ```
 
 Senza opzioni lo script salva il grafico dell'evento 0; `--event` seleziona un altro indice da zero. Con `--overlay` seleziona tutte le waveform con un solo massimo locale di ampiezza almeno il 10% del massimo assoluto, allinea il picco a `t = 0` e normalizza l'ampiezza assoluta a 1, quindi salva tutte le curve sovrapposte in un PDF. `--output percorso.pdf` permette di scegliere il nome del file in entrambe le modalità; le opzioni si possono passare attraverso `run.sh`.
