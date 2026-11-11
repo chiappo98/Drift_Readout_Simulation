@@ -37,8 +37,9 @@ void analyse_correlations(const char* runNumber) {
     return;
   }
 
-  const std::array<const char*, 6> requiredBranches{{
-      "totalCharge", "q_peak", "t_rise", "t_fall", "t_peak", "y1"}};
+  const std::array<const char*, 7> requiredBranches{{
+      "totalCharge", "q_peak", "t_rise", "t_fall", "t_peak", "y1",
+      "clusterElectrons"}};
   for (const auto* branch : requiredBranches) {
     if (!tree->GetBranch(branch)) {
       std::cerr << "Branch '" << branch
@@ -53,18 +54,20 @@ void analyse_correlations(const char* runNumber) {
   double fallTime = 0.0;
   double peakTime = 0.0;
   double trackY = 0.0;
+  std::vector<int>* clusterElectrons = nullptr;
   if (tree->SetBranchAddress("totalCharge", &totalCharge) < 0 ||
       tree->SetBranchAddress("q_peak", &peakAmplitude) < 0 ||
       tree->SetBranchAddress("t_rise", &riseTime) < 0 ||
       tree->SetBranchAddress("t_fall", &fallTime) < 0 ||
       tree->SetBranchAddress("t_peak", &peakTime) < 0 ||
-      tree->SetBranchAddress("y1", &trackY) < 0) {
+      tree->SetBranchAddress("y1", &trackY) < 0 ||
+      tree->SetBranchAddress("clusterElectrons", &clusterElectrons) < 0) {
     std::cerr << "Failed to bind branches for correlation analysis." << std::endl;
     tree->ResetBranchAddresses();
     return;
   }
 
-  const std::array<const char*, 16> names{{
+  const std::array<const char*, 18> names{{
       "h2_totalCharge_vs_peakAmplitude",
       "h2_totalCharge_vs_fallRise",
       "h2_peakAmplitude_vs_fallRise",
@@ -80,8 +83,10 @@ void analyse_correlations(const char* runNumber) {
       "h2_totalCharge_vs_riseTime",
       "h2_peakAmplitude_vs_riseTime",
       "h2_peakAmplitude_vs_trackY",
-      "h2_totalCharge_vs_trackY"}};
-  const std::array<const char*, 16> titles{{
+      "h2_totalCharge_vs_trackY",
+      "h2_gain_vs_trackY",
+      "h2_maxClusterFraction_vs_totalPrimaryElectrons"}};
+  const std::array<const char*, 18> titles{{
       "Peak amplitude vs total charge;Total charge [fC];Peak amplitude [fC]",
       "ToT vs total charge;Total charge [fC];ToT [ns]",
       "ToT vs peak amplitude;Peak amplitude [fC];ToT [ns]",
@@ -97,12 +102,20 @@ void analyse_correlations(const char* runNumber) {
       "Total charge vs time-at-threshold;Time-at-threshold [ns];Total charge [fC]",
       "Peak amplitude vs time-at-threshold;Time-at-threshold [ns];Peak amplitude [fC]",
       "Peak amplitude vs track y position;y [cm];Peak amplitude [fC]",
-      "Total charge vs track y position;y [cm];Total charge [fC]"}};
-  std::array<std::vector<std::pair<double, double>>, 16> points;
+      "Total charge vs track y position;y [cm];Total charge [fC]",
+      "Charge gain vs track y position;y [cm];Total charge / (N_{primary} #times e)",
+      "Largest cluster electron fraction vs total primary electrons;Total primary electrons;Maximum cluster electrons / total primary electrons"}};
+  std::array<std::vector<std::pair<double, double>>, 18> points;
 
   for (Long64_t entry = 0; entry < tree->GetEntries(); ++entry) {
     if (tree->GetEntry(entry) <= 0) {
       std::cerr << "Failed to read entry " << entry
+                << " for correlation analysis." << std::endl;
+      tree->ResetBranchAddresses();
+      return;
+    }
+    if (!clusterElectrons) {
+      std::cerr << "Cluster electron counts are missing at entry " << entry
                 << " for correlation analysis." << std::endl;
       tree->ResetBranchAddresses();
       return;
@@ -112,6 +125,27 @@ void analyse_correlations(const char* runNumber) {
     points[0].emplace_back(totalCharge, amplitude);
     points[14].emplace_back(trackY, amplitude);
     points[15].emplace_back(trackY, totalCharge);
+    long long primaryElectrons = 0;
+    for (const int electrons : *clusterElectrons) {
+      if (electrons < 0) {
+        std::cerr << "Negative primary electron count at entry " << entry
+                  << " for correlation analysis." << std::endl;
+        tree->ResetBranchAddresses();
+        return;
+      }
+      primaryElectrons += electrons;
+    }
+    if (primaryElectrons > 0) {
+      constexpr double electronChargeFC = 1.602176634e-4;
+      points[16].emplace_back(
+          trackY, totalCharge / (primaryElectrons * electronChargeFC));
+      const int maxClusterElectrons =
+          *std::max_element(clusterElectrons->begin(),
+                            clusterElectrons->end());
+      points[17].emplace_back(
+          static_cast<double>(primaryElectrons),
+          static_cast<double>(maxClusterElectrons) / primaryElectrons);
+    }
 
     if (totalCharge != 0.0) {
       points[5].emplace_back(trackY, amplitude / totalCharge);
@@ -165,7 +199,7 @@ void analyse_correlations(const char* runNumber) {
   }
   outputFile.cd();
   TCanvas canvas("c_correlations", "Simulation correlations", 1800, 1000);
-  canvas.Divide(4, 4);
+  canvas.Divide(4, 5);
 
   for (std::size_t i = 0; i < points.size(); ++i) {
     std::vector<double> xValues;

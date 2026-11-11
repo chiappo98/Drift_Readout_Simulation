@@ -1,18 +1,28 @@
 #include <TCanvas.h>
+#include <TBox.h>
 #include <TColor.h>
 #include <TFile.h>
 #include <TGraph.h>
+#include <TEllipse.h>
+#include <TH1D.h>
 #include <TLine.h>
+#include <TLegend.h>
+#include <TMarker.h>
 #include <TPad.h>
 #include <TPaveText.h>
+#include <TH2D.h>
 #include <TTree.h>
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 void DT_investigations(const char* runNumber, double tRiseMin,
@@ -31,7 +41,17 @@ void DT_investigations(const char* runNumber, double tRiseMin,
   const std::string runPath = std::string("results/run") + runNumber;
   const std::string resultsPath = runPath + ".root";
   const std::string waveformPath = runPath + "_waveform.root";
-  const std::string outputPath = runPath + "_selectedWF.pdf";
+  const double absTrackYMin =
+      trackYMin <= 0.0 && trackYMax >= 0.0
+          ? 0.0
+          : std::min(std::abs(trackYMin), std::abs(trackYMax));
+  const double absTrackYMax =
+      std::max(std::abs(trackYMin), std::abs(trackYMax));
+  std::ostringstream outputName;
+  outputName << runPath << "_selectedWF_" << std::setprecision(6)
+             << absTrackYMin << "-" << absTrackYMax << "_" << tRiseMin << "-"
+             << tRiseMax << ".pdf";
+  const std::string outputPath = outputName.str();
   constexpr std::size_t maxWaveforms = 40;
 
   TFile resultsFile(resultsPath.c_str(), "READ");
@@ -55,7 +75,9 @@ void DT_investigations(const char* runNumber, double tRiseMin,
     std::cerr << "Tree 'waveforms' not found in " << waveformPath << std::endl;
     return;
   }
-  for (const char* branch : {"t_rise", "y1"}) {
+  for (const char* branch : {"totalCharge", "t_rise", "x1", "y1", "z1",
+                             "dx1", "dy1", "dz1", "clusterX", "clusterY",
+                             "clusterZ", "clusterElectrons"}) {
     if (!resultsTree->GetBranch(branch)) {
       std::cerr << "Branch '" << branch << "' not found in " << resultsPath
                 << std::endl;
@@ -82,11 +104,31 @@ void DT_investigations(const char* runNumber, double tRiseMin,
     return;
   }
 
+  double totalCharge = 0.0;
   double tRise = 0.0;
+  double trackX = 0.0;
   double trackY = 0.0;
+  double trackZ = 0.0;
+  double directionX = 0.0;
+  double directionY = 0.0;
+  double directionZ = 0.0;
+  std::vector<double>* clusterX = nullptr;
+  std::vector<double>* clusterY = nullptr;
+  std::vector<double>* clusterZ = nullptr;
+  std::vector<int>* clusterElectrons = nullptr;
   ULong64_t resultsEvent = 0;
-  if (resultsTree->SetBranchAddress("t_rise", &tRise) < 0 ||
+  if (resultsTree->SetBranchAddress("totalCharge", &totalCharge) < 0 ||
+      resultsTree->SetBranchAddress("t_rise", &tRise) < 0 ||
+      resultsTree->SetBranchAddress("x1", &trackX) < 0 ||
       resultsTree->SetBranchAddress("y1", &trackY) < 0 ||
+      resultsTree->SetBranchAddress("z1", &trackZ) < 0 ||
+      resultsTree->SetBranchAddress("dx1", &directionX) < 0 ||
+      resultsTree->SetBranchAddress("dy1", &directionY) < 0 ||
+      resultsTree->SetBranchAddress("dz1", &directionZ) < 0 ||
+      resultsTree->SetBranchAddress("clusterX", &clusterX) < 0 ||
+      resultsTree->SetBranchAddress("clusterY", &clusterY) < 0 ||
+      resultsTree->SetBranchAddress("clusterZ", &clusterZ) < 0 ||
+      resultsTree->SetBranchAddress("clusterElectrons", &clusterElectrons) < 0 ||
       (matchByEvent &&
        resultsTree->SetBranchAddress("event", &resultsEvent) < 0)) {
     std::cerr << "Failed to bind branches in " << resultsPath << std::endl;
@@ -95,8 +137,18 @@ void DT_investigations(const char* runNumber, double tRiseMin,
   }
 
   struct SelectedEvent {
+    double totalCharge;
     double tRise;
     double trackY;
+    double trackX;
+    double trackZ;
+    double directionX;
+    double directionY;
+    double directionZ;
+    std::vector<double> clusterX;
+    std::vector<double> clusterY;
+    std::vector<double> clusterZ;
+    std::vector<int> clusterElectrons;
   };
   std::unordered_map<ULong64_t, SelectedEvent> selectedEvents;
   for (Long64_t entry = 0; entry < resultsTree->GetEntries(); ++entry) {
@@ -109,9 +161,22 @@ void DT_investigations(const char* runNumber, double tRiseMin,
         trackY > trackYMax) {
       continue;
     }
+    if (!clusterX || !clusterY || !clusterZ || !clusterElectrons ||
+        clusterX->size() != clusterY->size() ||
+        clusterX->size() != clusterZ->size() ||
+        clusterX->size() != clusterElectrons->size()) {
+      std::cerr << "Cluster branches are empty or have mismatched sizes at "
+                   "results entry "
+                << entry << std::endl;
+      resultsTree->ResetBranchAddresses();
+      return;
+    }
     const ULong64_t eventId =
         matchByEvent ? resultsEvent : static_cast<ULong64_t>(entry);
-    if (!selectedEvents.emplace(eventId, SelectedEvent{tRise, trackY}).second) {
+    SelectedEvent event{totalCharge, tRise, trackY, trackX, trackZ, directionX,
+                        directionY, directionZ, *clusterX, *clusterY,
+                        *clusterZ, *clusterElectrons};
+    if (!selectedEvents.emplace(eventId, std::move(event)).second) {
       std::cerr << "Duplicate event number " << eventId << " in "
                 << resultsPath << std::endl;
       resultsTree->ResetBranchAddresses();
@@ -139,6 +204,7 @@ void DT_investigations(const char* runNumber, double tRiseMin,
   const std::string canvasName =
       std::string("c_DT_investigations_run") + runNumber;
   auto* canvas = new TCanvas(canvasName.c_str(), "Selected waveforms", 1100, 900);
+  canvas->Print((outputPath + "[").c_str());
   std::size_t plottedEvents = 0;
   std::size_t matchedEvents = 0;
   for (Long64_t entry = 0; entry < waveformTree->GetEntries(); ++entry) {
@@ -196,6 +262,13 @@ void DT_investigations(const char* runNumber, double tRiseMin,
     TPad* shapedPad = static_cast<TPad*>(canvas->cd(1));
     shapedGraph.Draw("AL");
     shapedPad->Update();
+    const double expectedTRise = std::abs(selectedEvent.trackY) / 0.005;
+    TBox expectedTRiseBand(expectedTRise - 5.0, shapedPad->GetUymin(),
+                           expectedTRise + 5.0, shapedPad->GetUymax());
+    expectedTRiseBand.SetFillColorAlpha(kOrange + 1, 0.3);
+    expectedTRiseBand.SetLineColor(kOrange + 1);
+    expectedTRiseBand.SetLineWidth(0);
+    expectedTRiseBand.Draw("same");
     TLine tRiseLine(selectedEvent.tRise, shapedPad->GetUymin(),
                     selectedEvent.tRise, shapedPad->GetUymax());
     tRiseLine.SetLineColor(kRed);
@@ -203,12 +276,21 @@ void DT_investigations(const char* runNumber, double tRiseMin,
     tRiseLine.SetLineWidth(2);
     tRiseLine.Draw("same");
 
-    auto* riseText = new TPaveText(0.55, 0.62, 0.85, 0.82, "NDC");
+    auto* riseLegend = new TLegend(0.57, 0.7, 0.87, 0.82);
+    riseLegend->SetBorderSize(0);
+    riseLegend->SetFillStyle(0);
+    riseLegend->AddEntry(&expectedTRiseBand, "expected t_{rise}", "f");
+    riseLegend->AddEntry(&tRiseLine, "measured t_{rise}", "l");
+    riseLegend->Draw();
+
+    auto* riseText = new TPaveText(0.55, 0.52, 0.85, 0.68, "NDC");
     riseText->SetBorderSize(0);
     riseText->SetFillColor(0);
     riseText->SetTextAlign(12);
-    riseText->AddText(Form("t_{rise} = %.2f ns", selectedEvent.tRise));
-    riseText->AddText(Form("distance = %.2f cm", selectedEvent.trackY));
+    riseText->AddText(
+        Form("measured t_{rise} = %.2f ns", selectedEvent.tRise));
+    riseText->AddText(
+        Form("distance = %.2f cm", std::abs(selectedEvent.trackY)));
     riseText->Draw();
 
     TGraph rawGraph(static_cast<int>(rawSignal->size()), times.data(),
@@ -220,21 +302,164 @@ void DT_investigations(const char* runNumber, double tRiseMin,
     canvas->cd(2);
     rawGraph.Draw("AL");
 
-    if (plottedEvents == 0) {
-      canvas->Print((outputPath + "[").c_str());
+    canvas->Print(outputPath.c_str());
+
+    canvas->Clear();
+    canvas->cd();
+    const double directionMagnitude =
+        std::sqrt(selectedEvent.directionX * selectedEvent.directionX +
+                  selectedEvent.directionY * selectedEvent.directionY +
+                  selectedEvent.directionZ * selectedEvent.directionZ);
+    double trackEndX = selectedEvent.trackX;
+    double trackEndY = selectedEvent.trackY;
+    double maxTrackDistance = 0.0;
+    if (directionMagnitude > 0.0) {
+      for (std::size_t cluster = 0;
+           cluster < selectedEvent.clusterX.size(); ++cluster) {
+        const double dx = selectedEvent.clusterX[cluster] - selectedEvent.trackX;
+        const double dy = selectedEvent.clusterY[cluster] - selectedEvent.trackY;
+        const double dz = selectedEvent.clusterZ[cluster] - selectedEvent.trackZ;
+        maxTrackDistance =
+            std::max(maxTrackDistance,
+                     (dx * selectedEvent.directionX +
+                      dy * selectedEvent.directionY +
+                      dz * selectedEvent.directionZ) /
+                         directionMagnitude);
+      }
+      trackEndX += maxTrackDistance * selectedEvent.directionX /
+                   directionMagnitude;
+      trackEndY += maxTrackDistance * selectedEvent.directionY /
+                   directionMagnitude;
     }
+
+    std::ostringstream trackTitle;
+    trackTitle << "Event " << eventId << " track and clusters;x [cm];y [cm]";
+    const std::string frameName = "trackFrame_" + std::to_string(eventId);
+    TH2D trackFrame(frameName.c_str(), trackTitle.str().c_str(), 100, -0.6,
+                    0.6, 100, -0.7, 0.7);
+    trackFrame.SetDirectory(nullptr);
+    trackFrame.SetStats(false);
+    trackFrame.Draw("AXIS");
+
+    TLine trackLine(selectedEvent.trackX, selectedEvent.trackY, trackEndX,
+                    trackEndY);
+    trackLine.SetLineColor(kBlue + 1);
+    trackLine.SetLineWidth(2);
+    if (maxTrackDistance > 0.0) {
+      trackLine.Draw("same");
+    }
+    TMarker trackStart(selectedEvent.trackX, selectedEvent.trackY, 29);
+    trackStart.SetMarkerColor(kBlack);
+    trackStart.SetMarkerSize(1.7);
+    trackStart.Draw("same");
+
+    const int maxElectrons =
+        selectedEvent.clusterElectrons.empty()
+            ? 0
+            : *std::max_element(selectedEvent.clusterElectrons.begin(),
+                                selectedEvent.clusterElectrons.end());
+    long long totalPrimaryElectrons = 0;
+    for (const int electrons : selectedEvent.clusterElectrons) {
+      totalPrimaryElectrons += electrons;
+    }
+    std::vector<std::unique_ptr<TMarker>> clusterMarkers;
+    clusterMarkers.reserve(selectedEvent.clusterX.size());
+    for (std::size_t cluster = 0;
+         cluster < selectedEvent.clusterX.size(); ++cluster) {
+      const int electrons = selectedEvent.clusterElectrons[cluster];
+      if (electrons <= 0 || maxElectrons <= 0) {
+        continue;
+      }
+      auto marker = std::make_unique<TMarker>(
+          selectedEvent.clusterX[cluster], selectedEvent.clusterY[cluster],
+          24);
+      marker->SetMarkerColor(kRed + 1);
+      marker->SetMarkerSize(
+          5 * std::sqrt(static_cast<double>(electrons) / maxElectrons));
+      marker->Draw("same");
+      clusterMarkers.push_back(std::move(marker));
+    }
+
+    const std::array<double, 2> referenceY{{-0.7, 0.7}};
+    std::vector<std::unique_ptr<TEllipse>> referenceCircles;
+    referenceCircles.reserve(referenceY.size() + 1);
+    for (const double y : referenceY) {
+      auto circle = std::make_unique<TEllipse>(0.0, y, 0.0125, 0.0125);
+      circle->SetLineColor(kBlack);
+      circle->SetLineWidth(2);
+      circle->SetFillStyle(0);
+      circle->Draw("same");
+      referenceCircles.push_back(std::move(circle));
+    }
+    auto originCircle = std::make_unique<TEllipse>(0.0, 0.0, 0.0075, 0.0075);
+    originCircle->SetLineColor(kBlack);
+    originCircle->SetFillColor(kBlack);
+    originCircle->SetFillStyle(1001);
+    originCircle->Draw("same");
+    referenceCircles.push_back(std::move(originCircle));
+
+    auto* trackInfo = new TPaveText(0.50, 0.52, 0.85, 0.85, "NDC");
+    trackInfo->SetBorderSize(0);
+    trackInfo->SetFillColor(0);
+    trackInfo->SetTextAlign(12);
+    trackInfo->AddText(Form("Start: (%.3f, %.3f, %.3f) cm",
+                            selectedEvent.trackX, selectedEvent.trackY,
+                            selectedEvent.trackZ));
+    trackInfo->AddText(
+        Form("Clusters generated: %llu",
+             static_cast<unsigned long long>(
+                 selectedEvent.clusterElectrons.size())));
+    trackInfo->AddText(
+        Form("Max electrons in a cluster: %d (%.3f fC)", maxElectrons,
+             maxElectrons * 1.602e-4));
+    trackInfo->AddText(
+        Form("Total primary electrons: %lld (%.3f fC)", totalPrimaryElectrons,
+             totalPrimaryElectrons * 1.602e-4));
+    trackInfo->AddText(
+        Form("Total charge: %.2f fC", selectedEvent.totalCharge));
+    trackInfo->AddText("Cluster circle area #propto N_{e}");
+    trackInfo->Draw();
+    canvas->Modified();
+    canvas->Update();
     canvas->Print(outputPath.c_str());
     ++plottedEvents;
   }
   waveformTree->ResetBranchAddresses();
 
-  if (plottedEvents > 0) {
-    canvas->Print((outputPath + "]").c_str());
+  canvas->Clear();
+  canvas->cd();
+  TH1D electronRatioHistogram(
+      ("h_electron_ratio_run" + std::string(runNumber)).c_str(),
+      "Maximum cluster electrons / total primary electrons;Ratio (0 if total = 0);Selected events",
+      100, 0.0, 1.001);
+  electronRatioHistogram.SetDirectory(nullptr);
+  electronRatioHistogram.SetFillColor(kBlue - 7);
+  for (const auto& eventEntry : selectedEvents) {
+    const auto& electrons = eventEntry.second.clusterElectrons;
+    const int eventMaxElectrons =
+        electrons.empty() ? 0
+                          : *std::max_element(electrons.begin(), electrons.end());
+    long long eventTotalElectrons = 0;
+    for (const int count : electrons) {
+      eventTotalElectrons += count;
+    }
+    const double ratio =
+        eventTotalElectrons > 0
+            ? static_cast<double>(eventMaxElectrons) / eventTotalElectrons
+            : 0.0;
+    electronRatioHistogram.Fill(ratio);
   }
+  electronRatioHistogram.Draw();
+  canvas->Modified();
+  canvas->Update();
+  canvas->Print(outputPath.c_str());
+  canvas->Print((outputPath + "]").c_str());
+
   if (plottedEvents == 0) {
     std::cerr << "No selected events were found in " << waveformPath
+              << "; the PDF contains the ratio histogram for all selected "
+                 "results events."
               << std::endl;
-    return;
   }
 
   std::cout << "Plotted " << plottedEvents << " of " << matchedEvents
@@ -244,5 +469,5 @@ void DT_investigations(const char* runNumber, double tRiseMin,
     std::cerr << "Some selected events have no matching waveform entry."
               << std::endl;
   }
-  std::cout << "Waveform plot saved to " << outputPath << std::endl;
+  std::cout << "Investigation plots saved to " << outputPath << std::endl;
 }
