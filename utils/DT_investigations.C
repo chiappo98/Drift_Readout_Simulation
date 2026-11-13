@@ -9,6 +9,7 @@
 #include <TLegend.h>
 #include <TMarker.h>
 #include <TPad.h>
+#include <TPaletteAxis.h>
 #include <TPaveText.h>
 #include <TH2D.h>
 #include <TTree.h>
@@ -18,6 +19,7 @@
 #include <cmath>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -84,6 +86,17 @@ void DT_investigations(const char* runNumber, double tRiseMin,
       return;
     }
   }
+  const auto bindOptionalVector = [&resultsTree](const char* primary,
+                                                 const char* fallback,
+                                                 std::vector<double>** branchData) {
+    if (resultsTree->GetBranch(primary)) {
+      return resultsTree->SetBranchAddress(primary, branchData) >= 0;
+    }
+    if (resultsTree->GetBranch(fallback)) {
+      return resultsTree->SetBranchAddress(fallback, branchData) >= 0;
+    }
+    return false;
+  };
   for (const char* branch : {"waveform", "raw_signal"}) {
     if (!waveformTree->GetBranch(branch)) {
       std::cerr << "Branch '" << branch << "' not found in " << waveformPath
@@ -116,6 +129,11 @@ void DT_investigations(const char* runNumber, double tRiseMin,
   std::vector<double>* clusterY = nullptr;
   std::vector<double>* clusterZ = nullptr;
   std::vector<int>* clusterElectrons = nullptr;
+  std::vector<double>* electronX = nullptr;
+  std::vector<double>* electronY = nullptr;
+  const bool hasElectronXY = bindOptionalVector("electron_x", "clusterElectronX",
+                                               &electronX) &&
+      bindOptionalVector("electron_y", "clusterElectronY", &electronY);
   ULong64_t resultsEvent = 0;
   if (resultsTree->SetBranchAddress("totalCharge", &totalCharge) < 0 ||
       resultsTree->SetBranchAddress("t_rise", &tRise) < 0 ||
@@ -130,7 +148,12 @@ void DT_investigations(const char* runNumber, double tRiseMin,
       resultsTree->SetBranchAddress("clusterZ", &clusterZ) < 0 ||
       resultsTree->SetBranchAddress("clusterElectrons", &clusterElectrons) < 0 ||
       (matchByEvent &&
-       resultsTree->SetBranchAddress("event", &resultsEvent) < 0)) {
+       resultsTree->SetBranchAddress("event", &resultsEvent) < 0) ||
+      (!hasElectronXY &&
+       (resultsTree->GetBranch("electron_x") ||
+        resultsTree->GetBranch("clusterElectronX") ||
+        resultsTree->GetBranch("electron_y") ||
+        resultsTree->GetBranch("clusterElectronY")))) {
     std::cerr << "Failed to bind branches in " << resultsPath << std::endl;
     resultsTree->ResetBranchAddresses();
     return;
@@ -149,6 +172,8 @@ void DT_investigations(const char* runNumber, double tRiseMin,
     std::vector<double> clusterY;
     std::vector<double> clusterZ;
     std::vector<int> clusterElectrons;
+    std::vector<double> electronX;
+    std::vector<double> electronY;
   };
   std::unordered_map<ULong64_t, SelectedEvent> selectedEvents;
   for (Long64_t entry = 0; entry < resultsTree->GetEntries(); ++entry) {
@@ -173,9 +198,16 @@ void DT_investigations(const char* runNumber, double tRiseMin,
     }
     const ULong64_t eventId =
         matchByEvent ? resultsEvent : static_cast<ULong64_t>(entry);
+    std::vector<double> eventElectronX;
+    std::vector<double> eventElectronY;
+    if (electronX && electronY) {
+      eventElectronX = *electronX;
+      eventElectronY = *electronY;
+    }
     SelectedEvent event{totalCharge, tRise, trackY, trackX, trackZ, directionX,
                         directionY, directionZ, *clusterX, *clusterY,
-                        *clusterZ, *clusterElectrons};
+                        *clusterZ, *clusterElectrons, eventElectronX,
+                        eventElectronY};
     if (!selectedEvents.emplace(eventId, std::move(event)).second) {
       std::cerr << "Duplicate event number " << eventId << " in "
                 << resultsPath << std::endl;
@@ -335,11 +367,133 @@ void DT_investigations(const char* runNumber, double tRiseMin,
     std::ostringstream trackTitle;
     trackTitle << "Event " << eventId << " track and clusters;x [cm];y [cm]";
     const std::string frameName = "trackFrame_" + std::to_string(eventId);
-    TH2D trackFrame(frameName.c_str(), trackTitle.str().c_str(), 100, -0.6,
-                    0.6, 100, -0.7, 0.7);
+
+    const bool hasElectronData = !selectedEvent.electronX.empty() &&
+                                 !selectedEvent.electronY.empty() &&
+                                 selectedEvent.electronX.size() ==
+                                     selectedEvent.electronY.size();
+    std::vector<double> fillX;
+    std::vector<double> fillY;
+    if (hasElectronData) {
+      fillX = selectedEvent.electronX;
+      fillY = selectedEvent.electronY;
+    }
+    if ((!hasElectronData || fillX.empty() || fillY.empty()) &&
+        !selectedEvent.clusterX.empty() && !selectedEvent.clusterY.empty()) {
+      fillX = selectedEvent.clusterX;
+      fillY = selectedEvent.clusterY;
+    }
+
+    double frameXMin = -0.6;
+    double frameXMax = 0.6;
+    double frameYMin = -0.7;
+    double frameYMax = 0.7;
+    std::size_t validPoints = 0;
+    if (fillX.size() == fillY.size()) {
+      for (std::size_t i = 0; i < fillX.size() && i < fillY.size(); ++i) {
+        if (!std::isfinite(fillX[i]) || !std::isfinite(fillY[i])) {
+          continue;
+        }
+        frameXMin = std::min(frameXMin, fillX[i]);
+        frameXMax = std::max(frameXMax, fillX[i]);
+        frameYMin = std::min(frameYMin, fillY[i]);
+        frameYMax = std::max(frameYMax, fillY[i]);
+        ++validPoints;
+      }
+      if (validPoints > 0) {
+        const double xPadMargin = std::max(0.05, 0.10 * (frameXMax - frameXMin));
+        const double yPadMargin = std::max(0.05, 0.10 * (frameYMax - frameYMin));
+        frameXMin -= xPadMargin;
+        frameXMax += xPadMargin;
+        frameYMin -= yPadMargin;
+        frameYMax += yPadMargin;
+      }
+    }
+
+    TH2D trackFrame(frameName.c_str(), trackTitle.str().c_str(), 100,
+                    frameXMin, frameXMax, 100, frameYMin, frameYMax);
     trackFrame.SetDirectory(nullptr);
     trackFrame.SetStats(false);
+
+    canvas->Clear();
+    canvas->cd();
+    canvas->SetLeftMargin(0.10);
+    canvas->SetRightMargin(0.10);
+    canvas->SetTopMargin(0.08);
+    canvas->SetBottomMargin(0.12);
     trackFrame.Draw("AXIS");
+
+    std::unique_ptr<TH2D> electronBackground;
+    if (fillX.size() != fillY.size()) {
+      std::cerr << "Event " << eventId
+                << " has mismatched electron/cluster coordinate arrays; "
+                   "skipping the electron distribution plot."
+                << std::endl;
+      auto* noDataText = new TPaveText(0.15, 0.35, 0.85, 0.65, "NDC");
+      noDataText->SetBorderSize(0);
+      noDataText->SetFillStyle(0);
+      noDataText->SetTextAlign(22);
+      noDataText->AddText("No valid electron positions available");
+      noDataText->Draw();
+    } else if (validPoints == 0) {
+      std::cerr << "Event " << eventId
+                << " has zero valid finite coordinates for the electron "
+                   "distribution plot."
+                << std::endl;
+      auto* noDataText = new TPaveText(0.15, 0.35, 0.85, 0.65, "NDC");
+      noDataText->SetBorderSize(0);
+      noDataText->SetFillStyle(0);
+      noDataText->SetTextAlign(22);
+      noDataText->AddText("No valid electron positions after filtering");
+      noDataText->Draw();
+    } else {
+      std::cout << "Event " << eventId
+                << ": electron points valid=" << validPoints
+                << ", x in [" << frameXMin << ", " << frameXMax << "] cm, y in ["
+                << frameYMin << ", " << frameYMax << "] cm" << std::endl;
+      electronBackground = std::make_unique<TH2D>(
+          (frameName + "_electrons").c_str(),
+          Form("Event %llu electron distribution; x [cm]; y [cm]", eventId),
+          100, frameXMin, frameXMax, 100, frameYMin, frameYMax);
+      electronBackground->SetDirectory(nullptr);
+      electronBackground->SetStats(false);
+      for (std::size_t i = 0; i < fillX.size() && i < fillY.size(); ++i) {
+        if (!std::isfinite(fillX[i]) || !std::isfinite(fillY[i])) {
+          continue;
+        }
+        electronBackground->Fill(fillX[i], fillY[i]);
+      }
+      const double maxBinContent = std::max(1.0, electronBackground->GetMaximum());
+      electronBackground->SetMinimum(0.0);
+      electronBackground->SetMaximum(maxBinContent);
+      electronBackground->GetZaxis()->SetRangeUser(0.0, maxBinContent);
+      electronBackground->SetContour(50);
+      electronBackground->Draw("COLZ");
+      canvas->Modified();
+      canvas->Update();
+      auto* palette = static_cast<TPaletteAxis*>(
+          electronBackground->GetListOfFunctions()->FindObject("palette"));
+      if (palette) {
+        palette->SetX1NDC(0.88);
+        palette->SetX2NDC(0.93);
+        palette->SetY1NDC(0.12);
+        palette->SetY2NDC(0.90);
+        palette->SetTitle("electrons/bin");
+      }
+    }
+
+    canvas->cd();
+    TLine leftBoundary(-0.6, frameYMin, -0.6, frameYMax);
+    leftBoundary.SetLineColor(kBlack);
+    leftBoundary.SetLineStyle(2);
+    leftBoundary.SetLineWidth(1);
+    leftBoundary.Draw("same");
+
+    TLine rightBoundary(0.6, frameYMin, 0.6, frameYMax);
+    rightBoundary.SetLineColor(kBlack);
+    rightBoundary.SetLineStyle(2);
+    rightBoundary.SetLineWidth(1);
+    rightBoundary.Draw("same");
 
     TLine trackLine(selectedEvent.trackX, selectedEvent.trackY, trackEndX,
                     trackEndY);
@@ -398,7 +552,7 @@ void DT_investigations(const char* runNumber, double tRiseMin,
     originCircle->Draw("same");
     referenceCircles.push_back(std::move(originCircle));
 
-    auto* trackInfo = new TPaveText(0.50, 0.52, 0.85, 0.85, "NDC");
+    auto* trackInfo = new TPaveText(0.50, 0.6, 0.85, 0.8, "NDC");
     trackInfo->SetBorderSize(0);
     trackInfo->SetFillColor(0);
     trackInfo->SetTextAlign(12);
@@ -470,4 +624,5 @@ void DT_investigations(const char* runNumber, double tRiseMin,
               << std::endl;
   }
   std::cout << "Investigation plots saved to " << outputPath << std::endl;
+  
 }
