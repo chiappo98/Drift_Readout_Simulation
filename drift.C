@@ -132,7 +132,7 @@ SimulationConfig readConfig(const std::string& configPath) {
       config["argon_percent"].get<double>(),
       config["co2_percent"].get<double>()};
   if ((result.shaperOrder != 0 && result.shaperOrder != 1 && result.shaperOrder != 3) ||
-      result.shapingTimeNs < 25.0 || result.shapingTimeNs > 250.0 ||
+      result.shapingTimeNs < 5.0 || result.shapingTimeNs > 250.0 ||
       result.gain <= 0.0 ||
       result.asicSaturationMv <= 0.0 ||
       result.cellW <= 0.0 || result.cellY <= 0.0 ||
@@ -668,7 +668,7 @@ int main(int argc, char* argv[]) {
     E_mu = f_E->GetParameter(1);
     E_std = f_E->GetParameter(2);
 
-    std::cout << "ratio $\sigma / \mu$ for: " << std::endl;
+    std::cout << "ratio $\\sigma / \\mu$ for: " << std::endl;
     std::cout << "cluster size -> " << cl_size_std/cl_size_mu << std::endl;
     std::cout << "total energy -> " << E_std/E_mu << std::endl;
   }
@@ -760,7 +760,12 @@ int main(int argc, char* argv[]) {
     std::vector<int> v_nPrimaries;
     std::vector<std::vector<double>> v_clusterX, v_clusterY, v_clusterZ, v_clusterT,
         v_clusterE;
+    std::vector<std::vector<std::vector<double>>> v_clusterElectronX,
+        v_clusterElectronY, v_clusterElectronZ, v_clusterElectronT,
+        v_clusterElectronE;
     std::vector<std::vector<int>> v_clusterElectrons;
+    std::vector<std::vector<double>> v_electronX, v_electronY, v_electronZ,
+        v_electronT;
 
     double nbins = 2500; 
     double tStep = 1; //ns
@@ -835,6 +840,8 @@ int main(int argc, char* argv[]) {
     track_ind->EnablePlotting(driftView_rkf);
     drift_ind->EnablePlotting(driftView_rkf);
 
+    //track_ind->DisableDeltaElectronTransport();  
+
     std::random_device randomSeed;
     std::mt19937 randomEngine(randomSeed());
     std::uniform_real_distribution<double> positionDistribution(
@@ -866,12 +873,20 @@ int main(int argc, char* argv[]) {
       std::vector<double> eventClusterX, eventClusterY, eventClusterZ, eventClusterT,
           eventClusterE;
       std::vector<int> eventClusterElectrons;
+      std::vector<std::vector<double>> eventClusterElectronX, eventClusterElectronY,
+          eventClusterElectronZ, eventClusterElectronT, eventClusterElectronE;
+      std::vector<double> eventElectronX, eventElectronY, eventElectronZ, eventElectronT;
       eventClusterX.reserve(clusters_ind.size());
       eventClusterY.reserve(clusters_ind.size());
       eventClusterZ.reserve(clusters_ind.size());
       eventClusterT.reserve(clusters_ind.size());
       eventClusterE.reserve(clusters_ind.size());
       eventClusterElectrons.reserve(clusters_ind.size());
+      eventClusterElectronX.reserve(clusters_ind.size());
+      eventClusterElectronY.reserve(clusters_ind.size());
+      eventClusterElectronZ.reserve(clusters_ind.size());
+      eventClusterElectronT.reserve(clusters_ind.size());
+      eventClusterElectronE.reserve(clusters_ind.size());
       for (const auto& cl : clusters_ind) {
         eventClusterX.push_back(cl.x);
         eventClusterY.push_back(cl.y);
@@ -879,7 +894,31 @@ int main(int argc, char* argv[]) {
         eventClusterT.push_back(cl.t);
         eventClusterE.push_back(cl.energy);
         eventClusterElectrons.push_back(static_cast<int>(cl.electrons.size()));
+        eventClusterElectronX.emplace_back();
+        eventClusterElectronY.emplace_back();
+        eventClusterElectronZ.emplace_back();
+        eventClusterElectronT.emplace_back();
+        eventClusterElectronE.emplace_back();
+        auto& electronX = eventClusterElectronX.back();
+        auto& electronY = eventClusterElectronY.back();
+        auto& electronZ = eventClusterElectronZ.back();
+        auto& electronT = eventClusterElectronT.back();
+        auto& electronE = eventClusterElectronE.back();
+        electronX.reserve(cl.electrons.size());
+        electronY.reserve(cl.electrons.size());
+        electronZ.reserve(cl.electrons.size());
+        electronT.reserve(cl.electrons.size());
+        electronE.reserve(cl.electrons.size());
         for (const auto& electron : cl.electrons) {
+          electronX.push_back(electron.x);
+          electronY.push_back(electron.y);
+          electronZ.push_back(electron.z);
+          electronT.push_back(electron.t);
+          electronE.push_back(electron.e);
+          eventElectronX.push_back(electron.x);
+          eventElectronY.push_back(electron.y);
+          eventElectronZ.push_back(electron.z);
+          eventElectronT.push_back(electron.t);
           drift_ind->DriftElectron(electron.x, electron.y, electron.z, electron.t);
           drift_ind->DriftIon(electron.x, electron.y, electron.z, electron.t);
         }
@@ -891,6 +930,15 @@ int main(int argc, char* argv[]) {
       v_clusterT.push_back(std::move(eventClusterT));
       v_clusterE.push_back(std::move(eventClusterE));
       v_clusterElectrons.push_back(std::move(eventClusterElectrons));
+      v_clusterElectronX.push_back(std::move(eventClusterElectronX));
+      v_clusterElectronY.push_back(std::move(eventClusterElectronY));
+      v_clusterElectronZ.push_back(std::move(eventClusterElectronZ));
+      v_clusterElectronT.push_back(std::move(eventClusterElectronT));
+      v_clusterElectronE.push_back(std::move(eventClusterElectronE));
+      v_electronX.push_back(std::move(eventElectronX));
+      v_electronY.push_back(std::move(eventElectronY));
+      v_electronZ.push_back(std::move(eventElectronZ));
+      v_electronT.push_back(std::move(eventElectronT));
 
       if (saveRawSignals || saveWaveforms) {
         rawSignalSamples.clear();
@@ -1212,6 +1260,11 @@ int main(int argc, char* argv[]) {
                 .Define("clusterT",    [&](ULong64_t i){ return v_clusterT[i]; }, {"rdfentry_"})
                 .Define("clusterE",    [&](ULong64_t i){ return v_clusterE[i]; }, {"rdfentry_"})
                 .Define("clusterElectrons", [&](ULong64_t i){ return v_clusterElectrons[i]; }, {"rdfentry_"})
+                .Define("electron_x", [&](ULong64_t i){ return v_electronX[i]; }, {"rdfentry_"})
+                .Define("electron_y", [&](ULong64_t i){ return v_electronY[i]; }, {"rdfentry_"})
+                .Define("electron_z", [&](ULong64_t i){ return v_electronZ[i]; }, {"rdfentry_"})
+                .Define("electron_t", [&](ULong64_t i){ return v_electronT[i]; }, {"rdfentry_"})
+                .Define("clusterElectronE", [&](ULong64_t i){ return v_clusterElectronE[i]; }, {"rdfentry_"})
                 .Define("t_peak",      [&](ULong64_t i){ return v_t_peak[i]; }, {"rdfentry_"})
                 .Define("t_rise",      [&](ULong64_t i){ return v_t_rise[i]; }, {"rdfentry_"})
                 .Define("t_fall",      [&](ULong64_t i){ return v_t_fall[i]; }, {"rdfentry_"})
