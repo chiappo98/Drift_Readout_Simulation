@@ -1,5 +1,6 @@
 #include <TCanvas.h>
 #include <TFile.h>
+#include <TGraph.h>
 #include <TH1.h>
 #include <TH1D.h>
 #include <TH2D.h>
@@ -37,9 +38,9 @@ void analyse_correlations(const char* runNumber) {
     return;
   }
 
-  const std::array<const char*, 7> requiredBranches{{
+  const std::array<const char*, 8> requiredBranches{{
       "totalCharge", "q_peak", "t_rise", "t_fall", "t_peak", "y1",
-      "clusterElectrons"}};
+      "clusterElectrons", "clusterElectronE"}};
   for (const auto* branch : requiredBranches) {
     if (!tree->GetBranch(branch)) {
       std::cerr << "Branch '" << branch
@@ -55,13 +56,15 @@ void analyse_correlations(const char* runNumber) {
   double peakTime = 0.0;
   double trackY = 0.0;
   std::vector<int>* clusterElectrons = nullptr;
+  std::vector<std::vector<double>>* clusterElectronE = nullptr;
   if (tree->SetBranchAddress("totalCharge", &totalCharge) < 0 ||
       tree->SetBranchAddress("q_peak", &peakAmplitude) < 0 ||
       tree->SetBranchAddress("t_rise", &riseTime) < 0 ||
       tree->SetBranchAddress("t_fall", &fallTime) < 0 ||
       tree->SetBranchAddress("t_peak", &peakTime) < 0 ||
       tree->SetBranchAddress("y1", &trackY) < 0 ||
-      tree->SetBranchAddress("clusterElectrons", &clusterElectrons) < 0) {
+      tree->SetBranchAddress("clusterElectrons", &clusterElectrons) < 0 ||
+      tree->SetBranchAddress("clusterElectronE", &clusterElectronE) < 0) {
     std::cerr << "Failed to bind branches for correlation analysis." << std::endl;
     tree->ResetBranchAddresses();
     return;
@@ -106,6 +109,7 @@ void analyse_correlations(const char* runNumber) {
       "Charge gain vs track y position;y [cm];Total charge / (N_{primary} #times e)",
       "Largest cluster electron fraction vs total primary electrons;Total primary electrons;Maximum cluster electrons / total primary electrons"}};
   std::array<std::vector<std::pair<double, double>>, 18> points;
+  std::vector<double> allElectronEnergies;
 
   for (Long64_t entry = 0; entry < tree->GetEntries(); ++entry) {
     if (tree->GetEntry(entry) <= 0) {
@@ -114,11 +118,23 @@ void analyse_correlations(const char* runNumber) {
       tree->ResetBranchAddresses();
       return;
     }
-    if (!clusterElectrons) {
-      std::cerr << "Cluster electron counts are missing at entry " << entry
+    if (!clusterElectrons || !clusterElectronE) {
+      std::cerr << "Cluster data is missing at entry " << entry
                 << " for correlation analysis." << std::endl;
       tree->ResetBranchAddresses();
       return;
+    }
+    if (clusterElectronE->size() != clusterElectrons->size()) {
+      std::cerr << "Electron-energy and count branch sizes do not match at entry "
+                << entry << "." << std::endl;
+      tree->ResetBranchAddresses();
+      return;
+    }
+
+    for (std::size_t cluster = 0; cluster < clusterElectronE->size(); ++cluster) {
+      for (const double electronEnergy : clusterElectronE->at(cluster)) {
+        allElectronEnergies.push_back(electronEnergy);
+      }
     }
 
     const double amplitude = std::abs(peakAmplitude);
@@ -201,6 +217,39 @@ void analyse_correlations(const char* runNumber) {
   TCanvas canvas("c_correlations", "Simulation correlations", 1800, 1000);
   canvas.Divide(4, 5);
 
+  if (!allElectronEnergies.empty()) {
+    const auto eMinIt = std::min_element(allElectronEnergies.begin(), allElectronEnergies.end());
+    const auto eMaxIt = std::max_element(allElectronEnergies.begin(), allElectronEnergies.end());
+    const double eMin = *eMinIt;
+    const double eMax = *eMaxIt;
+    const int nThresholds = 200;
+    std::vector<double> thresholdValues;
+    std::vector<double> countsAboveThreshold;
+    thresholdValues.reserve(nThresholds);
+    countsAboveThreshold.reserve(nThresholds);
+    const double thresholdStep = (eMax > eMin) ? (eMax - eMin) / (nThresholds - 1) : 0.0;
+    for (int i = 0; i < nThresholds; ++i) {
+      const double e0 = eMin + i * thresholdStep;
+      thresholdValues.push_back(e0);
+      int nAbove = 0;
+      for (const double electronEnergy : allElectronEnergies) {
+        if (electronEnergy > e0) ++nAbove;
+      }
+      countsAboveThreshold.push_back(static_cast<double>(nAbove));
+    }
+    auto* thresholdGraph = new TGraph(
+        static_cast<int>(thresholdValues.size()), thresholdValues.data(),
+        countsAboveThreshold.data());
+    thresholdGraph->SetName("g_electrons_above_E0");
+    thresholdGraph->SetTitle(
+        "Electrons above energy threshold;E0 [eV];N(electrons > E0)");
+    thresholdGraph->SetLineWidth(2);
+    thresholdGraph->SetLineColor(kBlue);
+    canvas.cd(19);
+    thresholdGraph->Draw("AL");
+    thresholdGraph->Write();
+  }
+
   for (std::size_t i = 0; i < points.size(); ++i) {
     std::vector<double> xValues;
     std::vector<double> yValues;
@@ -257,11 +306,11 @@ void analyse_results(const char* runNumber) {
     const char* name;
     const char* title;
   };
-  const std::array<const char*, 17> requiredBranches{{
+  const std::array<const char*, 18> requiredBranches{{
       "totalCharge", "q_peak", "t_peak", "t_rise", "t_fall",
       "x1", "y1", "z1", "dx1", "dy1", "dz1",
       "clusterX", "clusterY", "clusterZ", "clusterT", "clusterE",
-      "clusterElectrons"}};
+      "clusterElectrons", "clusterElectronE"}};
   const std::array<HistogramSpec, 14> specs{{
       {"totalCharge", "h_totalCharge", "Total charge;Charge [fC];Events"},
       {"abs(q_peak)", "h_q_peak", "Peak amplitude;Amplitude [fC];Events"},
@@ -332,12 +381,14 @@ void analyse_results(const char* runNumber) {
   std::vector<double>* clusterT = nullptr;
   std::vector<double>* clusterE = nullptr;
   std::vector<int>* clusterElectrons = nullptr;
+  std::vector<std::vector<double>>* clusterElectronE = nullptr;
   if (tree->SetBranchAddress("clusterX", &clusterX) < 0 ||
       tree->SetBranchAddress("clusterY", &clusterY) < 0 ||
       tree->SetBranchAddress("clusterZ", &clusterZ) < 0 ||
       tree->SetBranchAddress("clusterT", &clusterT) < 0 ||
       tree->SetBranchAddress("clusterE", &clusterE) < 0 ||
-      tree->SetBranchAddress("clusterElectrons", &clusterElectrons) < 0) {
+      tree->SetBranchAddress("clusterElectrons", &clusterElectrons) < 0 ||
+      tree->SetBranchAddress("clusterElectronE", &clusterElectronE) < 0) {
     std::cerr << "Failed to bind cluster branches in tree 'results'." << std::endl;
     tree->ResetBranchAddresses();
     return;
@@ -347,6 +398,7 @@ void analyse_results(const char* runNumber) {
   std::vector<double> clusterTimeDifferences;
   std::vector<double> clusterEnergies;
   std::vector<double> clusterElectronCounts;
+  std::vector<double> electronEnergies;
   for (Long64_t entry = 0; entry < tree->GetEntries(); ++entry) {
     if (tree->GetEntry(entry) <= 0) {
       std::cerr << "Failed to read entry " << entry << " from tree 'results'."
@@ -355,7 +407,7 @@ void analyse_results(const char* runNumber) {
       return;
     }
     if (!clusterX || !clusterY || !clusterZ || !clusterT || !clusterE ||
-        !clusterElectrons) {
+        !clusterElectrons || !clusterElectronE) {
       std::cerr << "A cluster branch is empty at entry " << entry << "."
                 << std::endl;
       tree->ResetBranchAddresses();
@@ -382,7 +434,8 @@ void analyse_results(const char* runNumber) {
     const auto clusterCount = clusterX->size();
     if (clusterY->size() != clusterCount || clusterZ->size() != clusterCount ||
         clusterT->size() != clusterCount || clusterE->size() != clusterCount ||
-        clusterElectrons->size() != clusterCount) {
+        clusterElectrons->size() != clusterCount ||
+        clusterElectronE->size() != clusterCount) {
       std::cerr << "Cluster branch sizes do not match at entry " << entry << "."
                 << std::endl;
       tree->ResetBranchAddresses();
@@ -393,6 +446,16 @@ void analyse_results(const char* runNumber) {
       clusterEnergies.push_back(clusterE->at(cluster));
       clusterElectronCounts.push_back(
           static_cast<double>(clusterElectrons->at(cluster)));
+      if (clusterElectronE->at(cluster).size() !=
+          static_cast<std::size_t>(clusterElectrons->at(cluster))) {
+        std::cerr << "Electron-energy count does not match cluster count at entry "
+                  << entry << "." << std::endl;
+        tree->ResetBranchAddresses();
+        return;
+      }
+      for (const double electronEnergy : clusterElectronE->at(cluster)) {
+        electronEnergies.push_back(electronEnergy);
+      }
       if (cluster + 1 == clusterCount) {
         continue;
       }
@@ -451,7 +514,7 @@ void analyse_results(const char* runNumber) {
     histogram->Write();
   }
 
-  const std::array<TH1D*, 4> clusterHistograms{{
+  const std::array<TH1D*, 5> clusterHistograms{{
       makeHistogram("h_cluster_distance_3d",
                     "Distance between consecutive clusters;Distance [mm];Pairs",
                     clusterDistances3D),
@@ -462,7 +525,10 @@ void analyse_results(const char* runNumber) {
                     "Electrons per cluster;Number of electrons;Clusters",
                     clusterElectronCounts),
       makeHistogram("h_cluster_energy", "Cluster energy;Energy [eV];Clusters",
-                    clusterEnergies)}};
+                    clusterEnergies),
+      makeHistogram("h_electron_energy",
+                    "Electron energy;Energy [eV];Electrons",
+                    electronEnergies)}};
   for (std::size_t i = 0; i < clusterHistograms.size(); ++i) {
     auto* pad = canvas.GetPad(static_cast<int>(specs.size() + i + 1));
     pad->cd();
@@ -472,6 +538,37 @@ void analyse_results(const char* runNumber) {
     }
     clusterHistograms[i]->Draw("HIST");
     clusterHistograms[i]->Write();
+  }
+
+  if (!electronEnergies.empty()) {
+    const double eMin = *std::min_element(electronEnergies.begin(), electronEnergies.end());
+    const double eMax = *std::max_element(electronEnergies.begin(), electronEnergies.end());
+    const int nThresholds = 200;
+    std::vector<double> thresholdValues;
+    std::vector<double> countsAboveThreshold;
+    thresholdValues.reserve(nThresholds);
+    countsAboveThreshold.reserve(nThresholds);
+    const double thresholdStep = (eMax > eMin) ? (eMax - eMin) / (nThresholds - 1) : 0.0;
+    for (int i = 0; i < nThresholds; ++i) {
+      const double e0 = eMin + i * thresholdStep;
+      thresholdValues.push_back(e0);
+      int nAbove = 0;
+      for (const double electronEnergy : electronEnergies) {
+        if (electronEnergy > e0) ++nAbove;
+      }
+      countsAboveThreshold.push_back(static_cast<double>(nAbove));
+    }
+    auto* thresholdGraph = new TGraph(
+        static_cast<int>(thresholdValues.size()), thresholdValues.data(),
+        countsAboveThreshold.data());
+    thresholdGraph->SetName("g_electrons_above_E0");
+    thresholdGraph->SetTitle(
+        "Electrons above energy threshold;E0 [eV];N(electrons > E0)");
+    thresholdGraph->SetLineWidth(2);
+    thresholdGraph->SetLineColor(kBlue);
+    canvas.cd(20);
+    thresholdGraph->Draw("AL");
+    thresholdGraph->Write();
   }
 
   canvas.Write();
