@@ -27,7 +27,7 @@ namespace {
 constexpr int kSlices = 23;
 constexpr double kSplineMinimumTrackY = -0.65;
 constexpr double kSplineMaximumTrackY = 0.0;
-constexpr int kResidualBins = 7;
+constexpr int kResidualBins = 14;
 
 double crystalBall(double* x, double* parameters) {
   const double alpha = std::abs(parameters[3]);
@@ -358,9 +358,14 @@ void spatial_res(const char* runNumber) {
   std::unique_ptr<TSpline3> mpvSpline;
   TGraph splinePoints;
   TGraph splineCurve;
+  std::unique_ptr<TF1> mpvLineFit;
+  TGraph lineCurve;
   splineCurve.SetName("crystal_ball_mpv_spline_curve");
   splineCurve.SetLineColor(kGreen + 2);
   splineCurve.SetLineWidth(3);
+  lineCurve.SetName("crystal_ball_mpv_linear_fit_curve");
+  lineCurve.SetLineColor(kMagenta + 1);
+  lineCurve.SetLineWidth(3);
   double splineMinimum = 0.0;
   double splineMaximum = 0.0;
   for (int point = 0; point < mpvGraph.GetN(); ++point) {
@@ -387,6 +392,26 @@ void spatial_res(const char* runNumber) {
       splineCurve.SetPoint(sample, x, mpvSpline->Eval(x));
     }
     splineCurve.Draw("L SAME");
+
+    mpvLineFit = std::make_unique<TF1>(
+        "crystal_ball_mpv_linear_fit", "pol1", splineMinimum, splineMaximum);
+    mpvLineFit->SetParNames("Intercept", "Slope");
+    const int fitStatus = mpvGraph.Fit(mpvLineFit.get(), "QRS0");
+    const double slope = mpvLineFit->GetParameter(1);
+    if (fitStatus != 0 || !std::isfinite(slope) || slope == 0.0) {
+      std::cerr << "Linear MPV fit failed or has an invalid slope (status "
+                << fitStatus << ")." << std::endl;
+      mpvLineFit.reset();
+    } else {
+      for (int sample = 0; sample < kSplineSamples; ++sample) {
+        const double x =
+            splineMinimum +
+            (splineMaximum - splineMinimum) * sample /
+                (kSplineSamples - 1);
+        lineCurve.SetPoint(sample, x, mpvLineFit->Eval(x));
+      }
+      lineCurve.Draw("L SAME");
+    }
   } else {
     std::cerr << "Cannot build the MPV spline in trackY range ["
               << kSplineMinimumTrackY << ", " << kSplineMaximumTrackY
@@ -400,10 +425,15 @@ void spatial_res(const char* runNumber) {
   if (mpvSpline) {
     legend.AddEntry(&splineCurve, "MPV spline fit", "l");
   }
+  if (mpvLineFit) {
+    legend.AddEntry(&lineCurve, "MPV linear fit", "l");
+  }
   legend.Draw();
   if (mpvGraph.Write() <= 0 ||
       (mpvSpline &&
        (mpvSpline->Write() <= 0 || splineCurve.Write() <= 0)) ||
+      (mpvLineFit &&
+       (mpvLineFit->Write() <= 0 || lineCurve.Write() <= 0)) ||
       canvas.Write() <= 0) {
     std::cerr << "Failed to write spatial-resolution output: " << rootPath
               << std::endl;
@@ -442,6 +472,8 @@ void spatial_res(const char* runNumber) {
   const double residualBinWidth =
       (kSplineMaximumTrackY - kSplineMinimumTrackY) / kResidualBins;
   std::array<std::unique_ptr<TH1D>, kResidualBins> residualHistograms;
+  std::array<std::unique_ptr<TH1D>, kResidualBins>
+      linearResidualHistograms;
   for (int bin = 0; bin < kResidualBins; ++bin) {
     const double binMinimum =
         kSplineMinimumTrackY + bin * residualBinWidth;
@@ -457,10 +489,21 @@ void spatial_res(const char* runNumber) {
     residualHistograms[bin]->SetDirectory(nullptr);
     residualHistograms[bin]->SetLineColor(kBlue + 1);
     residualHistograms[bin]->SetFillColor(kAzure - 9);
+    linearResidualHistograms[bin] = std::make_unique<TH1D>(
+        ("trackY_linear_residual_bin_" + twoDigits(bin + 1)).c_str(),
+        (title.str() + " (linear fit);Reconstructed y - true y [cm];Events")
+            .c_str(),
+        390, -0.65, 0.65);
+    linearResidualHistograms[bin]->SetDirectory(nullptr);
+    linearResidualHistograms[bin]->SetLineColor(kMagenta + 1);
+    linearResidualHistograms[bin]->SetLineWidth(2);
+    linearResidualHistograms[bin]->SetFillStyle(0);
   }
 
   Long64_t reconstructedEntries = 0;
   Long64_t rejectedEntries = 0;
+  Long64_t linearReconstructedEntries = 0;
+  Long64_t linearRejectedEntries = 0;
   for (Long64_t entry = 0; entry < eventTree->GetEntries(); ++entry) {
     if (eventTree->GetEntry(entry) <= 0) {
       std::cerr << "Failed to read event " << entry << " from " << eventPath
@@ -474,26 +517,41 @@ void spatial_res(const char* runNumber) {
       continue;
     }
 
-    double reconstructedTrackY = 0.0;
-    if (!invertSpline(*mpvSpline, splineMinimum, splineMaximum, riseTime,
-                      reconstructedTrackY)) {
-      ++rejectedEntries;
-      continue;
-    }
-
     int bin = static_cast<int>(
         (trackY - kSplineMinimumTrackY) / residualBinWidth);
     if (bin == kResidualBins) {
       bin = kResidualBins - 1;
     }
-    residualHistograms[bin]->Fill(reconstructedTrackY - trackY);
-    ++reconstructedEntries;
+
+    double reconstructedTrackY = 0.0;
+    if (invertSpline(*mpvSpline, splineMinimum, splineMaximum, riseTime,
+                     reconstructedTrackY)) {
+      residualHistograms[bin]->Fill(reconstructedTrackY - trackY);
+      ++reconstructedEntries;
+    } else {
+      ++rejectedEntries;
+    }
+
+    if (mpvLineFit) {
+      const double linearReconstructedTrackY =
+          (riseTime - mpvLineFit->GetParameter(0)) /
+          mpvLineFit->GetParameter(1);
+      if (!std::isfinite(linearReconstructedTrackY) ||
+          linearReconstructedTrackY < splineMinimum ||
+          linearReconstructedTrackY > splineMaximum) {
+        ++linearRejectedEntries;
+      } else {
+        linearResidualHistograms[bin]->Fill(linearReconstructedTrackY -
+                                            trackY);
+        ++linearReconstructedEntries;
+      }
+    }
   }
   eventTree->ResetBranchAddresses();
 
   TCanvas residualCanvas("c_trackY_residuals",
                          "Track y residuals by true position", 1500, 900);
-  residualCanvas.Divide(4, 2);
+  residualCanvas.Divide(4, 4);
   TGraphErrors residualSigmaGraph;
   residualSigmaGraph.SetName("residual_crystal_ball_sigma_vs_slice");
   residualSigmaGraph.SetTitle(
@@ -502,6 +560,15 @@ void spatial_res(const char* runNumber) {
   residualSigmaGraph.SetMarkerStyle(20);
   residualSigmaGraph.SetMarkerColor(kBlue + 1);
   residualSigmaGraph.SetLineColor(kBlue + 1);
+  TGraphErrors linearResidualSigmaGraph;
+  linearResidualSigmaGraph.SetName(
+      "linear_residual_crystal_ball_sigma_vs_slice");
+  linearResidualSigmaGraph.SetTitle(
+      "Linear-fit residual width vs true track y;"
+      "True track y slice center [cm];Width [#mum]");
+  linearResidualSigmaGraph.SetMarkerStyle(22);
+  linearResidualSigmaGraph.SetMarkerColor(kMagenta + 1);
+  linearResidualSigmaGraph.SetLineColor(kMagenta + 1);
   TGraph residualRmsGraph;
   residualRmsGraph.SetName("residual_rms_vs_slice");
   residualRmsGraph.SetTitle(
@@ -519,67 +586,85 @@ void spatial_res(const char* runNumber) {
     residualRmsGraph.SetPoint(bin, sliceCenter, residualRmsUm);
 
     residualLegends[bin] =
-        std::make_unique<TLegend>(0.52, 0.77, 0.89, 0.89);
-    if (residualHistogram.GetEntries() > 0.0 &&
-        residualHistogram.GetMaximum() > 0.0) {
-      const double binWidth = residualHistogram.GetXaxis()->GetBinWidth(1);
-      const double sigmaStart =
-          std::max(residualHistogram.GetRMS(), binWidth);
-      const double meanStart = residualHistogram.GetXaxis()->GetBinCenter(
-          residualHistogram.GetMaximumBin());
-      TF1 residualFit(("residual_crystal_ball_fit_" + twoDigits(bin + 1)).c_str(),
-                      crystalBall, -0.3, 0.3, 5);
-      residualFit.SetParNames("Amplitude", "MPV", "Sigma", "Alpha", "N");
-      residualFit.SetParameters(residualHistogram.GetMaximum(), meanStart,
-                                sigmaStart, 1.5, 3.0);
-      residualFit.SetParLimits(0, 0.0,
-                               residualHistogram.GetMaximum() * 100.0);
-      residualFit.SetParLimits(1, -0.3, 0.3);
-      residualFit.SetParLimits(2, binWidth * 0.1, 1.3);
-      residualFit.SetParLimits(3, 0.1, 10.0);
-      residualFit.SetParLimits(4, 1.01, 100.0);
-      const int fitStatus = residualHistogram.Fit(&residualFit, "QRS0");
-      if (fitStatus == 0) {
-        auto* fittedFunction =
-            residualHistogram.GetFunction(residualFit.GetName());
-        if (fittedFunction) {
-          fittedFunction->SetLineColor(kRed + 1);
+        std::make_unique<TLegend>(0.47, 0.70, 0.89, 0.89);
+    const auto fitResidualHistogram =
+        [&](TH1D& histogram, const std::string& fitName, int color,
+            const char* label, TGraphErrors& sigmaGraph) {
+          if (histogram.GetEntries() <= 0.0 || histogram.GetMaximum() <= 0.0) {
+            std::cerr << label << " residual slice " << bin + 1
+                      << " is empty; skipping Crystal Ball fit." << std::endl;
+            return;
+          }
+          const double binWidth = histogram.GetXaxis()->GetBinWidth(1);
+          const double sigmaStart = std::max(histogram.GetRMS(), binWidth);
+          const double meanStart = histogram.GetXaxis()->GetBinCenter(
+              histogram.GetMaximumBin());
+          TF1 residualFit(fitName.c_str(), crystalBall, -0.3, 0.3, 5);
+          residualFit.SetParNames("Amplitude", "MPV", "Sigma", "Alpha", "N");
+          residualFit.SetParameters(histogram.GetMaximum(), meanStart,
+                                    sigmaStart, 1.5, 3.0);
+          residualFit.SetParLimits(0, 0.0, histogram.GetMaximum() * 100.0);
+          residualFit.SetParLimits(1, -0.3, 0.3);
+          residualFit.SetParLimits(2, binWidth * 0.1, 1.3);
+          residualFit.SetParLimits(3, 0.1, 10.0);
+          residualFit.SetParLimits(4, 1.01, 100.0);
+          const int fitStatus = histogram.Fit(&residualFit, "QRS0");
+          if (fitStatus != 0) {
+            std::cerr << "Crystal Ball fit failed for " << label
+                      << " residual slice " << bin + 1 << " (status "
+                      << fitStatus << ")." << std::endl;
+            return;
+          }
+          auto* fittedFunction = histogram.GetFunction(fitName.c_str());
+          if (!fittedFunction) {
+            std::cerr << "Crystal Ball function missing for " << label
+                      << " residual slice " << bin + 1 << "." << std::endl;
+            return;
+          }
+          fittedFunction->SetLineColor(color);
           fittedFunction->SetLineWidth(3);
-          residualLegends[bin]->AddEntry(fittedFunction, "Crystal Ball fit",
-                                         "l");
-          residualSigmaGraph.SetPoint(residualSigmaGraph.GetN(), sliceCenter,
-                                      residualFit.GetParameter(2) * 10000.0);
-          residualSigmaGraph.SetPointError(
-              residualSigmaGraph.GetN() - 1, 0.0,
-              residualFit.GetParError(2) * 10000.0);
-        } else {
-          std::cerr << "Crystal Ball function missing for residual slice "
-                    << bin + 1 << "." << std::endl;
-        }
-      } else {
-        std::cerr << "Crystal Ball fit failed for residual slice " << bin + 1
-                  << " (status " << fitStatus << ")." << std::endl;
-      }
-    } else {
-      std::cerr << "Residual slice " << bin + 1
-                << " is empty; skipping Crystal Ball fit." << std::endl;
-    }
+          residualLegends[bin]->AddEntry(&histogram, label, "l");
+          residualLegends[bin]->AddEntry(fittedFunction,
+                                         "Crystal Ball fit", "l");
+          sigmaGraph.SetPoint(sigmaGraph.GetN(), sliceCenter,
+                              residualFit.GetParameter(2) * 10000.0);
+          sigmaGraph.SetPointError(sigmaGraph.GetN() - 1, 0.0,
+                                   residualFit.GetParError(2) * 10000.0);
+        };
+    fitResidualHistogram(
+        residualHistogram,
+        "residual_crystal_ball_fit_" + twoDigits(bin + 1), kRed + 1,
+        "Spline residuals", residualSigmaGraph);
+    fitResidualHistogram(
+        *linearResidualHistograms[bin],
+        "linear_residual_crystal_ball_fit_" + twoDigits(bin + 1),
+        kMagenta + 1, "Linear residuals", linearResidualSigmaGraph);
 
     outputFile->cd();
-    if (residualHistogram.Write() <= 0) {
+    if (residualHistogram.Write() <= 0 ||
+        linearResidualHistograms[bin]->Write() <= 0) {
       std::cerr << "Failed to write residual histogram for trackY bin "
                 << bin + 1 << "." << std::endl;
       return;
     }
     residualCanvas.cd(bin + 1);
     residualHistogram.Draw("HIST");
+    linearResidualHistograms[bin]->Draw("HIST SAME");
     if (residualHistogram.GetFunction(
             ("residual_crystal_ball_fit_" + twoDigits(bin + 1)).c_str())) {
       auto* fittedFunction = residualHistogram.GetFunction(
           ("residual_crystal_ball_fit_" + twoDigits(bin + 1)).c_str());
       fittedFunction->Draw("SAME");
-      residualLegends[bin]->Draw();
     }
+    if (linearResidualHistograms[bin]->GetFunction(
+            ("linear_residual_crystal_ball_fit_" + twoDigits(bin + 1))
+                .c_str())) {
+      auto* fittedFunction = linearResidualHistograms[bin]->GetFunction(
+          ("linear_residual_crystal_ball_fit_" + twoDigits(bin + 1))
+              .c_str());
+      fittedFunction->Draw("SAME");
+    }
+    residualLegends[bin]->Draw();
   }
   outputFile->cd();
   if (residualCanvas.Write() <= 0) {
@@ -598,6 +683,7 @@ void spatial_res(const char* runNumber) {
       "Residual widths by true track y;True track y slice center [cm];"
       "Width [#mum]");
   residualWidths.Add(&residualSigmaGraph, "P");
+  residualWidths.Add(&linearResidualSigmaGraph, "P");
   residualWidths.Add(&residualRmsGraph, "LP");
   TCanvas widthsCanvas("c_residual_widths",
                        "Residual sigma and RMS by true position", 1000, 700);
@@ -608,12 +694,17 @@ void spatial_res(const char* runNumber) {
   residualWidths.SetMinimum(0.0);
   residualWidths.SetMaximum(600.0);
   TLegend widthsLegend(0.62, 0.76, 0.88, 0.89);
-  widthsLegend.AddEntry(&residualSigmaGraph, "Crystal Ball #sigma", "p");
+  widthsLegend.AddEntry(&residualSigmaGraph, "Spline Crystal Ball #sigma",
+                        "p");
+  widthsLegend.AddEntry(&linearResidualSigmaGraph,
+                        "Linear Crystal Ball #sigma", "p");
   widthsLegend.AddEntry(&residualRmsGraph, "Residual RMS", "lp");
   widthsLegend.Draw();
   outputFile->cd();
-  if (residualSigmaGraph.Write() <= 0 || residualRmsGraph.Write() <= 0 ||
-      residualWidths.Write() <= 0 || widthsCanvas.Write() <= 0) {
+  if (residualSigmaGraph.Write() <= 0 ||
+      linearResidualSigmaGraph.Write() <= 0 ||
+      residualRmsGraph.Write() <= 0 || residualWidths.Write() <= 0 ||
+      widthsCanvas.Write() <= 0) {
     std::cerr << "Failed to write residual-width output to " << rootPath
               << std::endl;
     return;
@@ -655,7 +746,11 @@ void spatial_res(const char* runNumber) {
   std::cout << "MPV graph saved to " << rootPath << std::endl;
   std::cout << "Residual distributions saved to " << residualPlotPath
             << " (" << reconstructedEntries << " events; " << rejectedEntries
-            << " events could not be inverted uniquely)." << std::endl;
+            << " events could not be inverted uniquely with the spline; "
+            << linearReconstructedEntries << " events reconstructed with "
+            << "the linear fit; " << linearRejectedEntries
+            << " linear reconstructions fell outside the fit range)."
+            << std::endl;
   std::cout << "Residual sigma and RMS plot saved to " << widthsPlotPath
             << std::endl;
 }
