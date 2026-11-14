@@ -358,14 +358,27 @@ void spatial_res(const char* runNumber) {
   std::unique_ptr<TSpline3> mpvSpline;
   TGraph splinePoints;
   TGraph splineCurve;
+  TGraph splineVelocityCurve;
   std::unique_ptr<TF1> mpvLineFit;
   TGraph lineCurve;
+  TGraph lineVelocityCurve;
   splineCurve.SetName("crystal_ball_mpv_spline_curve");
   splineCurve.SetLineColor(kGreen + 2);
   splineCurve.SetLineWidth(3);
+  splineVelocityCurve.SetName("spline_drift_velocity_vs_trackY");
+  splineVelocityCurve.SetTitle(
+      "Drift velocity vs track y;Track y [cm];Drift velocity [cm/#mus]");
+  splineVelocityCurve.SetLineColor(kGreen + 2);
+  splineVelocityCurve.SetLineWidth(3);
   lineCurve.SetName("crystal_ball_mpv_linear_fit_curve");
   lineCurve.SetLineColor(kMagenta + 1);
   lineCurve.SetLineWidth(3);
+  lineVelocityCurve.SetName("linear_drift_velocity_vs_trackY");
+  lineVelocityCurve.SetTitle(
+      "Drift velocity vs track y;Track y [cm];Drift velocity [cm/#mus]");
+  lineVelocityCurve.SetLineColor(kMagenta + 1);
+  lineVelocityCurve.SetLineStyle(2);
+  lineVelocityCurve.SetLineWidth(3);
   double splineMinimum = 0.0;
   double splineMaximum = 0.0;
   for (int point = 0; point < mpvGraph.GetN(); ++point) {
@@ -378,9 +391,9 @@ void spatial_res(const char* runNumber) {
   }
   const bool hasSplineRange = splinePoints.GetN() >= 2;
   if (hasSplineRange) {
+    constexpr int kSplineSamples = 300;
     mpvSpline = std::make_unique<TSpline3>(
         "crystal_ball_mpv_spline", &splinePoints, "b2e2");
-    constexpr int kSplineSamples = 300;
     double endpointMpv = 0.0;
     splinePoints.GetPoint(0, splineMinimum, endpointMpv);
     splinePoints.GetPoint(splinePoints.GetN() - 1, splineMaximum, endpointMpv);
@@ -411,6 +424,27 @@ void spatial_res(const char* runNumber) {
         lineCurve.SetPoint(sample, x, mpvLineFit->Eval(x));
       }
       lineCurve.Draw("L SAME");
+
+      const double lineVelocity = 1000.0 / std::abs(slope);
+      if (std::isfinite(lineVelocity)) {
+        lineVelocityCurve.SetPoint(0, splineMinimum, lineVelocity);
+        lineVelocityCurve.SetPoint(1, splineMaximum, lineVelocity);
+      }
+    }
+
+    for (int sample = 0; sample < kSplineSamples; ++sample) {
+      const double x =
+          splineMinimum +
+          (splineMaximum - splineMinimum) * sample /
+              (kSplineSamples - 1);
+      const double timeDerivative = mpvSpline->Derivative(x);
+      if (std::isfinite(timeDerivative) && timeDerivative != 0.0) {
+        const double velocity = 1000.0 / std::abs(timeDerivative);
+        if (std::isfinite(velocity)) {
+          splineVelocityCurve.SetPoint(splineVelocityCurve.GetN(), x,
+                                       velocity);
+        }
+      }
     }
   } else {
     std::cerr << "Cannot build the MPV spline in trackY range ["
@@ -442,10 +476,50 @@ void spatial_res(const char* runNumber) {
   canvas.SaveAs(plotPath.c_str());
 
   if (!mpvSpline) {
-    std::cerr << "Cannot calculate residuals without a valid MPV spline."
+    std::cerr << "Cannot calculate residuals or drift velocity without a "
+                 "valid MPV spline."
               << std::endl;
     return;
   }
+
+  TMultiGraph driftVelocity;
+  driftVelocity.SetName("drift_velocity_vs_trackY");
+  driftVelocity.SetTitle(
+      "Drift velocity vs track y;Track y [cm];Drift velocity [cm/#mus]");
+  if (splineVelocityCurve.GetN() > 0) {
+    driftVelocity.Add(&splineVelocityCurve, "L");
+  } else {
+    std::cerr << "Cannot calculate spline drift velocity in the fit range."
+              << std::endl;
+  }
+  if (mpvLineFit) {
+    driftVelocity.Add(&lineVelocityCurve, "L");
+  }
+  TCanvas driftVelocityCanvas("c_drift_velocity",
+                              "Drift velocity vs track y", 1000, 700);
+  driftVelocity.Draw("A");
+  TLegend driftVelocityLegend(0.65, 0.78, 0.88, 0.89);
+  if (splineVelocityCurve.GetN() > 0) {
+    driftVelocityLegend.AddEntry(&splineVelocityCurve,
+                                 "Spline-derived velocity", "l");
+  }
+  if (mpvLineFit) {
+    driftVelocityLegend.AddEntry(&lineVelocityCurve, "Linear-fit velocity",
+                                 "l");
+  }
+  driftVelocityLegend.Draw();
+  outputFile->cd();
+  if ((splineVelocityCurve.GetN() > 0 &&
+       splineVelocityCurve.Write() <= 0) ||
+      (mpvLineFit && lineVelocityCurve.Write() <= 0) ||
+      driftVelocity.Write() <= 0 || driftVelocityCanvas.Write() <= 0) {
+    std::cerr << "Failed to write drift-velocity output to " << rootPath
+              << std::endl;
+    return;
+  }
+  const std::string driftVelocityPlotPath =
+      runBase + "_drift_velocity.png";
+  driftVelocityCanvas.SaveAs(driftVelocityPlotPath.c_str());
 
   const std::string eventPath = runBase + ".root";
   std::unique_ptr<TFile> eventFile(TFile::Open(eventPath.c_str(), "READ"));
@@ -739,6 +813,13 @@ void spatial_res(const char* runNumber) {
               << std::endl;
     return;
   }
+  std::ifstream driftVelocityPlotFile(driftVelocityPlotPath,
+                                      std::ios::binary);
+  if (!driftVelocityPlotFile) {
+    std::cerr << "Failed to create drift-velocity plot: "
+              << driftVelocityPlotPath << std::endl;
+    return;
+  }
   std::cout << "Spatial-resolution plot saved to " << plotPath << std::endl;
   std::cout << "Crystal Ball time-resolution plot saved to "
             << timeResolutionPlotPath << " (" << timeResolutionGraph.GetN()
@@ -752,5 +833,9 @@ void spatial_res(const char* runNumber) {
             << " linear reconstructions fell outside the fit range)."
             << std::endl;
   std::cout << "Residual sigma and RMS plot saved to " << widthsPlotPath
+            << std::endl;
+  std::cout << "Drift-velocity plot saved to " << driftVelocityPlotPath
+            << " (spline derivative and linear-fit slope converted to "
+               "cm/us)."
             << std::endl;
 }
