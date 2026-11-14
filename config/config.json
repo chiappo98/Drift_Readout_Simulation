@@ -1,4 +1,6 @@
 {
+  "particle": "muon",
+  "energy_eV": 170e9,
   "shaper": 0,
   "shaping_time_ns": 25,
   "gain_mV/fC": 2.0,

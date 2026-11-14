@@ -47,6 +47,8 @@
 using namespace Garfield;
 
 struct SimulationConfig {
+  std::string particle;
+  double energyEv;
   int shaperOrder;
   double shapingTimeNs;
   double gain;
@@ -93,7 +95,9 @@ SimulationConfig readConfig(const std::string& configPath) {
   }
 
   const auto config = nlohmann::json::parse(input);
-  if (!config.is_object() || !config.contains("shaper") ||
+  if (!config.is_object() || !config.contains("particle") ||
+      !config["particle"].is_string() || !config.contains("energy_eV") ||
+      !config["energy_eV"].is_number() || !config.contains("shaper") ||
       !config["shaper"].is_number_integer() ||
       !config.contains("shaping_time_ns") ||
       !config["shaping_time_ns"].is_number() ||
@@ -116,6 +120,8 @@ SimulationConfig readConfig(const std::string& configPath) {
   }
 
   const SimulationConfig result{
+      config["particle"].get<std::string>(),
+      config["energy_eV"].get<double>(),
       config["shaper"].get<int>(),
       config["shaping_time_ns"].get<double>(),
       config["gain_mV/fC"].get<double>(),
@@ -131,7 +137,9 @@ SimulationConfig readConfig(const std::string& configPath) {
       config["dField"].get<double>(),
       config["argon_percent"].get<double>(),
       config["co2_percent"].get<double>()};
-  if ((result.shaperOrder != 0 && result.shaperOrder != 1 && result.shaperOrder != 3) ||
+  if (result.particle.empty() || !std::isfinite(result.energyEv) ||
+      result.energyEv <= 0.0 ||
+      (result.shaperOrder != 0 && result.shaperOrder != 1 && result.shaperOrder != 3) ||
       result.shapingTimeNs < 5.0 || result.shapingTimeNs > 250.0 ||
       result.gain <= 0.0 ||
       result.asicSaturationMv <= 0.0 ||
@@ -587,8 +595,8 @@ int main(int argc, char* argv[]) {
   if (simTrack) {
 
     TrackHeed *track = new TrackHeed();
-    track->SetParticle("electron");
-    track->SetEnergy(450e6); // eV
+    track->SetParticle(config.particle);
+    track->SetEnergy(config.energyEv);
     track->SetSensor(&sensor);
 
     // Initial position and direction
@@ -678,8 +686,8 @@ int main(int argc, char* argv[]) {
 
     // Define ionizing track (muon)
     TrackHeed* track_rkf = new TrackHeed();
-    track_rkf->SetParticle("muon");
-    track_rkf->SetEnergy(170e9);
+    track_rkf->SetParticle(config.particle);
+    track_rkf->SetEnergy(config.energyEv);
     track_rkf->SetSensor(&sensor);
 
     // Define Drift method (RKF is deterministic/smooth)
@@ -824,8 +832,8 @@ int main(int argc, char* argv[]) {
 
     // Define ionizing track (muon)
     TrackHeed* track_ind = new TrackHeed();
-    track_ind->SetParticle("muon");
-    track_ind->SetEnergy(170e9);
+    track_ind->SetParticle(config.particle);
+    track_ind->SetEnergy(config.energyEv);
     track_ind->SetSensor(&sensor);
 
     // Define Drift method (RKF is deterministic/smooth)
