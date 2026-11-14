@@ -16,7 +16,9 @@
 #include <ROOT/RDataFrame.hxx>
 
 #include <fstream>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <cctype>
@@ -202,6 +204,41 @@ SimulationFlags readSimulationFlags(const std::string& configPath) {
           config["simTrack"].get<bool>(),
           config["simDriftRKF"].get<bool>(),
           signalInduction};
+}
+
+std::string formatRootFilenameComponent(double value, int precision = 3) {
+  std::ostringstream stream;
+  stream << std::fixed << std::setprecision(precision) << std::abs(value);
+  std::string result = stream.str();
+  while (result.size() > 1 && result.back() == '0') {
+    result.pop_back();
+  }
+  if (!result.empty() && result.back() == '.') {
+    result.pop_back();
+  }
+  return result;
+}
+
+std::string buildFieldPlotFilename(const SimulationConfig& config) {
+  const std::string ar = formatRootFilenameComponent(config.argonPercent, 0);
+  const std::string co2 = formatRootFilenameComponent(config.co2Percent, 0);
+  const std::string vField = formatRootFilenameComponent(config.vField);
+  const std::string vMylar = formatRootFilenameComponent(config.vMylar);
+  const std::string vSense = formatRootFilenameComponent(config.vSense);
+  const std::string cellW = formatRootFilenameComponent(config.cellW);
+  const std::string cellY = formatRootFilenameComponent(config.cellY);
+  const std::string dSense = formatRootFilenameComponent(config.dSense);
+  const std::string dField = formatRootFilenameComponent(config.dField);
+
+  return "../results/Ar-" + ar + "_CO2-" + co2 +
+         "_vField-" + vField +
+         "_vMylar-" + vMylar +
+         "_vSense-" + vSense +
+         "_cellw-" + cellW +
+         "_celly-" + cellY +
+         "_dSense-" + dSense +
+         "_dField-" + dField +
+         ".root";
 }
 
 void writeConfigurationSnapshot(const std::string& runNumber,
@@ -419,26 +456,59 @@ int main(int argc, char* argv[]) {
   mediumView2.SetMedium(&gas2);
   
   if (plotField) {
+    const std::string fieldPlotFileName = buildFieldPlotFilename(config);
+
     // TCanvas* cf = new TCanvas("cf", "multi-cell view", 300, 1000);
     // // fieldView.SetArea(-cell_t/2,-cell_w, 0, cell_t/2, cell_w, 0);
     // fieldView.SetCanvas(cf);
     // fieldView.Plot("e","COLZ");
 
-    // Plot Electric Field Map
+    // Plot Electric Field Map as an explicit histogram so ROOT saves the data.
+    const int nFieldBins = 200;
+    TH2D* hE = new TH2D("hE", "Electric field magnitude", nFieldBins, -cell_t / 2., cell_t / 2.,
+                       nFieldBins, -cell_w / 2., cell_w / 2.);
+    hE->SetStats(false);
+    hE->GetXaxis()->SetTitle("x [cm]");
+    hE->GetYaxis()->SetTitle("y [cm]");
+    for (int ix = 1; ix <= nFieldBins; ++ix) {
+      const double x = hE->GetXaxis()->GetBinCenter(ix);
+      for (int iy = 1; iy <= nFieldBins; ++iy) {
+        const double y = hE->GetYaxis()->GetBinCenter(iy);
+        double ex = 0., ey = 0., ez = 0., v = 0.;
+        Medium* med = nullptr;
+        int status = 0;
+        sensor.ElectricField(x, y, 0.0, ex, ey, ez, v, med, status);
+        const double eMag = std::sqrt(ex * ex + ey * ey + ez * ez);
+        hE->SetBinContent(ix, iy, eMag);
+      }
+    }
     TCanvas* cf1 = new TCanvas("cf1", "single cell E-field view", 700, 800);
-    fieldView.EnableAutoRange();
-    // fieldView.SetArea(-cell_t/2,-cell_w/2, cell_t/2, cell_w/2);
-    fieldView.SetCanvas(cf1);
-    fieldView.Plot("e","COLZ");
+    cf1->cd();
+    hE->Draw("COLZ");
     gPad->SetLogz(1);
+    cf1->Modified();
+    cf1->Update();
 
-    // Plot Electric Potential Map
-    TCanvas* cf11 = new TCanvas("cf11", "single cell E-field view", 700, 800);
-    fieldView.EnableAutoRange();
-    // fieldView.SetArea(-cell_t/2,-cell_w/2, cell_t/2, cell_w/2);
-    fieldView.SetCanvas(cf11);
-    fieldView.Plot("p","COLZ");
+    // Plot Electric Potential Map as an explicit histogram so ROOT saves the data.
+    TH2D* hP = new TH2D("hP", "Electric potential", nFieldBins, -cell_t / 2., cell_t / 2.,
+                       nFieldBins, -cell_w / 2., cell_w / 2.);
+    hP->SetStats(false);
+    hP->GetXaxis()->SetTitle("x [cm]");
+    hP->GetYaxis()->SetTitle("y [cm]");
+    for (int ix = 1; ix <= nFieldBins; ++ix) {
+      const double x = hP->GetXaxis()->GetBinCenter(ix);
+      for (int iy = 1; iy <= nFieldBins; ++iy) {
+        const double y = hP->GetYaxis()->GetBinCenter(iy);
+        const double potential = cmp.ElectricPotential(x, y, 0.0);
+        hP->SetBinContent(ix, iy, potential);
+      }
+    }
+    TCanvas* cf11 = new TCanvas("cf11", "single cell potential view", 700, 800);
+    cf11->cd();
+    hP->Draw("COLZ");
     gPad->SetLogz(0);
+    cf11->Modified();
+    cf11->Update();
 
 
     TCanvas* cf2 = new TCanvas("cf2", "E-field lines", 700, 800);
@@ -518,17 +588,22 @@ int main(int argc, char* argv[]) {
     c_v->SetRealAspectRatio();
 
     // Output File Path
-    const std::string outFilePath = "../plot/mylar/0.7w-0.6h_1550m-1950f_noComsol.root";
+    //const std::string outFilePath = "../plot/mylar/0.7w-0.6h_1550m-1950f_noComsol.root";
     // const std::string outFilePath = "../plot/mesh/0.7w-0.6h_1550m-1950f_0.2p-0.05d.root";
 
     // Save to file
-    TFile f( outFilePath.c_str(), "RECREATE");
+    TFile fieldFile(fieldPlotFileName.c_str(), "RECREATE");
+    cf1->Write();
+    cf11->Write();
+    cf2->Write();
+    c_v->Write();
     h_v->Write();
-    std::cout << "Saved plot to File " << outFilePath << std::endl; 
-
+    fieldFile.Close();
+    std::cout << "Saved field plot to file " << fieldPlotFileName << std::endl;
 
   }
   if (plotGasPar) {
+    const std::string gasPlotFileName = "../results/gasParameters.root";
     TCanvas* cm = new TCanvas("cm", "Electron Drift Velocity", 1800, 600);
     cm->Divide(3,1);
 
@@ -560,6 +635,12 @@ int main(int argc, char* argv[]) {
     mediumView1.SetCanvas(pA3);
     mediumView1.PlotElectronDiffusion('e');
     TLatex lA3; lA3.SetTextAlign(13); lA3.DrawLatexNDC(0.3, 0.3, "Ar-CO_{2} 70-30"); 
+
+    TFile gasFile(gasPlotFileName.c_str(), "RECREATE");
+    cm->Write();
+    cA->Write();
+    gasFile.Close();
+    std::cout << "Saved gas parameter plots to file " << gasPlotFileName << std::endl;
   }
   if (plotDrift) {
 
