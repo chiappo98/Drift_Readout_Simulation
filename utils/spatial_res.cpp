@@ -1,14 +1,17 @@
 #include <TAxis.h>
 #include <array>
 #include <TCanvas.h>
+#include <TCollection.h>
 #include <TColor.h>
 #include <TFile.h>
 #include <TF1.h>
+#include <TGraph.h>
 #include <TGraphErrors.h>
 #include <TH1D.h>
 #include <TH2.h>
 #include <TLegend.h>
 #include <TMultiGraph.h>
+#include <TPad.h>
 #include <TSpline.h>
 #include <TSystem.h>
 #include <TTree.h>
@@ -18,9 +21,14 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
 #include <memory>
+#include <regex>
 #include <sstream>
+#include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace {
 
@@ -52,6 +60,249 @@ std::string twoDigits(int value) {
   std::ostringstream result;
   result << std::setw(2) << std::setfill('0') << value;
   return result.str();
+}
+
+double readConfigNumber(const std::string& configSnapshotPath,
+                        const std::string& key) {
+  std::ifstream input(configSnapshotPath);
+  if (!input) {
+    throw std::runtime_error("Cannot open run configuration snapshot: " +
+                             configSnapshotPath);
+  }
+  const std::string contents((std::istreambuf_iterator<char>(input)),
+                             std::istreambuf_iterator<char>());
+  const std::regex pattern("\"" + key +
+                           "\"\\s*:\\s*(-?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)"
+                           "(?:[eE][+-]?[0-9]+)?)");
+  std::smatch match;
+  if (!std::regex_search(contents, match, pattern)) {
+    throw std::runtime_error("Missing numeric '" + key +
+                             "' in configuration snapshot " +
+                             configSnapshotPath);
+  }
+  return std::stod(match[1].str());
+}
+
+std::string formatFieldFilenameComponent(double value, int precision = 3) {
+  std::ostringstream stream;
+  stream << std::fixed << std::setprecision(precision) << std::abs(value);
+  std::string result = stream.str();
+  while (result.size() > 1 && result.back() == '0') {
+    result.pop_back();
+  }
+  if (!result.empty() && result.back() == '.') {
+    result.pop_back();
+  }
+  return result;
+}
+
+std::string fieldPlotPathFromSnapshot(const std::string& runBase) {
+  const std::string snapshotPath = runBase + "_configurations.txt";
+  const double argon = readConfigNumber(snapshotPath, "argon_percent");
+  const double co2 = readConfigNumber(snapshotPath, "co2_percent");
+  const double field = readConfigNumber(snapshotPath, "vField");
+  const double mylar = readConfigNumber(snapshotPath, "vMylar");
+  const double sense = readConfigNumber(snapshotPath, "vSense");
+  const double cellW = readConfigNumber(snapshotPath, "cell_w");
+  const double cellY = readConfigNumber(snapshotPath, "cell_y");
+  const double dSense = readConfigNumber(snapshotPath, "dSense");
+  const double dField = readConfigNumber(snapshotPath, "dField");
+  return "results/Ar-" + formatFieldFilenameComponent(argon, 0) +
+         "_CO2-" + formatFieldFilenameComponent(co2, 0) +
+         "_vField-" + formatFieldFilenameComponent(field) +
+         "_vMylar-" + formatFieldFilenameComponent(mylar) +
+         "_vSense-" + formatFieldFilenameComponent(sense) +
+         "_cellw-" + formatFieldFilenameComponent(cellW) +
+         "_celly-" + formatFieldFilenameComponent(cellY) +
+         "_dSense-" + formatFieldFilenameComponent(dSense) +
+         "_dField-" + formatFieldFilenameComponent(dField) + ".root";
+}
+
+void collectGraphs(TPad& pad, std::vector<TGraph*>& graphs) {
+  TIter next(pad.GetListOfPrimitives());
+  while (auto* object = next()) {
+    if (auto* graph = dynamic_cast<TGraph*>(object)) {
+      if (graph->GetN() >= 2) {
+        graphs.push_back(graph);
+      }
+    } else if (auto* multiGraph = dynamic_cast<TMultiGraph*>(object)) {
+      TIter nextGraph(multiGraph->GetListOfGraphs());
+      while (auto* graphObject = nextGraph()) {
+        auto* graph = dynamic_cast<TGraph*>(graphObject);
+        if (graph && graph->GetN() >= 2) {
+          graphs.push_back(graph);
+        }
+      }
+    } else if (auto* nestedPad = dynamic_cast<TPad*>(object)) {
+      collectGraphs(*nestedPad, graphs);
+    }
+  }
+}
+
+bool interpolateGraph(const TGraph& graph, double x, double& y) {
+  std::vector<std::pair<double, double>> points;
+  points.reserve(graph.GetN());
+  for (int point = 0; point < graph.GetN(); ++point) {
+    double graphX = 0.0;
+    double graphY = 0.0;
+    graph.GetPoint(point, graphX, graphY);
+    if (std::isfinite(graphX) && std::isfinite(graphY)) {
+      points.emplace_back(graphX, graphY);
+    }
+  }
+  std::sort(points.begin(), points.end());
+  if (points.size() < 2 || x < points.front().first ||
+      x > points.back().first) {
+    return false;
+  }
+
+  const auto upper = std::lower_bound(
+      points.begin(), points.end(), x,
+      [](const std::pair<double, double>& point, double value) {
+        return point.first < value;
+      });
+  if (upper == points.begin()) {
+    y = upper->second;
+    return true;
+  }
+  if (upper == points.end()) {
+    y = points.back().second;
+    return true;
+  }
+  if (upper->first == x) {
+    y = upper->second;
+    return true;
+  }
+  const auto lower = upper - 1;
+  const double span = upper->first - lower->first;
+  if (span <= 0.0) {
+    return false;
+  }
+  const double fraction = (x - lower->first) / span;
+  y = lower->second + fraction * (upper->second - lower->second);
+  return std::isfinite(y);
+}
+
+int makeGarfieldVelocityCurves(const std::string& fieldPlotPath,
+                               std::array<TGraph, 3>& velocityCurves) {
+  const std::string gasPlotPath = "results/gasParameters.root";
+  std::unique_ptr<TFile> gasFile(TFile::Open(gasPlotPath.c_str(), "READ"));
+  if (!gasFile || gasFile->IsZombie()) {
+    std::cerr << "Cannot open Garfield gas-parameter file: " << gasPlotPath
+              << std::endl;
+    return 0;
+  }
+  std::unique_ptr<TFile> fieldFile(TFile::Open(fieldPlotPath.c_str(), "READ"));
+  if (!fieldFile || fieldFile->IsZombie()) {
+    std::cerr << "Cannot open Garfield field-plot file: " << fieldPlotPath
+              << std::endl;
+    return 0;
+  }
+
+  auto* gasCanvas = dynamic_cast<TCanvas*>(gasFile->Get("cm"));
+  auto* fieldCanvas = dynamic_cast<TCanvas*>(fieldFile->Get("cf1"));
+  if (!gasCanvas || !fieldCanvas) {
+    std::cerr << "Required canvas 'cm' or 'cf1' is missing from Garfield "
+                 "plot files."
+              << std::endl;
+    return 0;
+  }
+  auto* fieldHistogram =
+      dynamic_cast<TH2*>(fieldCanvas->GetPrimitive("hE"));
+  if (!fieldHistogram) {
+    std::cerr << "Electric-field histogram 'hE' is missing from canvas 'cf1'."
+              << std::endl;
+    return 0;
+  }
+
+  constexpr std::array<const char*, 3> labels = {
+      "Ar-CO_{2} 90-10", "Ar-CO_{2} 85-15", "Ar-CO_{2} 70-30"};
+  constexpr std::array<int, 3> colors = {kCyan + 2, kOrange + 7, kViolet + 1};
+  const double xMinimum = fieldHistogram->GetXaxis()->GetXmin();
+  const double xMaximum = fieldHistogram->GetXaxis()->GetXmax();
+  if (xMinimum > 0.0 || xMaximum < 0.0) {
+    std::cerr << "Field histogram does not cover x = 0." << std::endl;
+    return 0;
+  }
+  const int fieldXBin = fieldHistogram->GetXaxis()->FindFixBin(0.0);
+  int fieldXLowBin = fieldXBin;
+  int fieldXHighBin = fieldXBin;
+  if (fieldHistogram->GetXaxis()->GetBinCenter(fieldXBin) < 0.0) {
+    fieldXHighBin = fieldXBin + 1;
+  } else if (fieldHistogram->GetXaxis()->GetBinCenter(fieldXBin) > 0.0) {
+    fieldXLowBin = fieldXBin - 1;
+  }
+  const double xLow = fieldHistogram->GetXaxis()->GetBinCenter(fieldXLowBin);
+  const double xHigh = fieldHistogram->GetXaxis()->GetBinCenter(fieldXHighBin);
+  if (xLow > 0.0 || xHigh < 0.0) {
+    std::cerr << "Cannot interpolate the field histogram at x = 0."
+              << std::endl;
+    return 0;
+  }
+
+  int populatedCurves = 0;
+  for (int gasIndex = 0; gasIndex < 3; ++gasIndex) {
+    auto* gasPad = gasCanvas->GetPad(gasIndex + 1);
+    if (!gasPad) {
+      std::cerr << "Gas-parameter canvas 'cm' is missing pad "
+                << gasIndex + 1 << "." << std::endl;
+      continue;
+    }
+    std::vector<TGraph*> graphs;
+    collectGraphs(*gasPad, graphs);
+    const auto graph = std::max_element(
+        graphs.begin(), graphs.end(),
+        [](const TGraph* left, const TGraph* right) {
+          return left->GetN() < right->GetN();
+        });
+    if (graph == graphs.end()) {
+      std::cerr << "No velocity graph found in gas-parameter pad "
+                << gasIndex + 1 << "." << std::endl;
+      continue;
+    }
+
+    TGraph& velocityCurve = velocityCurves[gasIndex];
+    velocityCurve.SetName(
+        ("garfield_drift_velocity_ArCO2_" +
+         std::to_string(gasIndex + 1))
+            .c_str());
+    velocityCurve.SetTitle(
+        "Garfield drift velocity vs track y;Track y [cm];"
+        "Drift velocity [cm/#mus]");
+    velocityCurve.SetLineColor(colors[gasIndex]);
+    velocityCurve.SetLineWidth(2);
+    for (int yBin = 1; yBin <= fieldHistogram->GetNbinsY(); ++yBin) {
+      const double trackY = fieldHistogram->GetYaxis()->GetBinCenter(yBin);
+      if (trackY < -0.7 || trackY > 0.0) {
+        continue;
+      }
+      const double lowField =
+          fieldHistogram->GetBinContent(fieldXLowBin, yBin);
+      const double highField =
+          fieldHistogram->GetBinContent(fieldXHighBin, yBin);
+      if (!std::isfinite(lowField) || !std::isfinite(highField)) {
+        continue;
+      }
+      double electricField = lowField;
+      if (fieldXHighBin != fieldXLowBin && xHigh != xLow) {
+        const double fraction = (0.0 - xLow) / (xHigh - xLow);
+        electricField = lowField + fraction * (highField - lowField);
+      }
+      double velocity = 0.0;
+      if (std::isfinite(electricField) && electricField >= 0.0 &&
+          interpolateGraph(**graph, electricField, velocity)) {
+        velocityCurve.SetPoint(velocityCurve.GetN(), trackY, velocity);
+      }
+    }
+    if (velocityCurve.GetN() > 0) {
+      ++populatedCurves;
+    } else {
+      std::cerr << "No Garfield velocity samples overlap the electric-field "
+                   "range for "
+                << labels[gasIndex] << "." << std::endl;
+    }
+  }
+  return populatedCurves;
 }
 
 bool invertSpline(const TSpline3& spline, double minimum, double maximum,
@@ -495,6 +746,23 @@ void spatial_res(const char* runNumber) {
   if (mpvLineFit) {
     driftVelocity.Add(&lineVelocityCurve, "L");
   }
+  std::array<TGraph, 3> garfieldVelocityCurves;
+  int garfieldCurveCount = 0;
+  try {
+    garfieldCurveCount = makeGarfieldVelocityCurves(
+        fieldPlotPathFromSnapshot(runBase), garfieldVelocityCurves);
+  } catch (const std::exception& error) {
+    std::cerr << "Cannot load Garfield drift-velocity curves: " << error.what()
+              << std::endl;
+  }
+  constexpr std::array<const char*, 3> garfieldGasLabels = {
+      "Garfield Ar-CO_{2} 90-10", "Garfield Ar-CO_{2} 85-15",
+      "Garfield Ar-CO_{2} 70-30"};
+  for (int gasIndex = 0; gasIndex < 3; ++gasIndex) {
+    if (garfieldVelocityCurves[gasIndex].GetN() > 0) {
+      driftVelocity.Add(&garfieldVelocityCurves[gasIndex], "L");
+    }
+  }
   TCanvas driftVelocityCanvas("c_drift_velocity",
                               "Drift velocity vs track y", 1000, 700);
   driftVelocity.Draw("A");
@@ -507,6 +775,12 @@ void spatial_res(const char* runNumber) {
     driftVelocityLegend.AddEntry(&lineVelocityCurve, "Linear-fit velocity",
                                  "l");
   }
+  for (int gasIndex = 0; gasIndex < 3; ++gasIndex) {
+    if (garfieldVelocityCurves[gasIndex].GetN() > 0) {
+      driftVelocityLegend.AddEntry(&garfieldVelocityCurves[gasIndex],
+                                   garfieldGasLabels[gasIndex], "l");
+    }
+  }
   driftVelocityLegend.Draw();
   outputFile->cd();
   if ((splineVelocityCurve.GetN() > 0 &&
@@ -516,6 +790,13 @@ void spatial_res(const char* runNumber) {
     std::cerr << "Failed to write drift-velocity output to " << rootPath
               << std::endl;
     return;
+  }
+  for (const auto& velocityCurve : garfieldVelocityCurves) {
+    if (velocityCurve.GetN() > 0 && velocityCurve.Write() <= 0) {
+      std::cerr << "Failed to write a Garfield drift-velocity curve to "
+                << rootPath << std::endl;
+      return;
+    }
   }
   const std::string driftVelocityPlotPath =
       runBase + "_drift_velocity.png";
@@ -836,6 +1117,7 @@ void spatial_res(const char* runNumber) {
             << std::endl;
   std::cout << "Drift-velocity plot saved to " << driftVelocityPlotPath
             << " (spline derivative and linear-fit slope converted to "
-               "cm/us)."
+               "cm/us; "
+            << garfieldCurveCount << " Garfield gas-mixture curves)."
             << std::endl;
 }
