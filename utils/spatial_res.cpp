@@ -15,6 +15,7 @@
 #include <TSpline.h>
 #include <TSystem.h>
 #include <TTree.h>
+#include <TVirtualPad.h>
 
 #include <algorithm>
 #include <cmath>
@@ -118,7 +119,7 @@ std::string fieldPlotPathFromSnapshot(const std::string& runBase) {
          "_dField-" + formatFieldFilenameComponent(dField) + ".root";
 }
 
-void collectGraphs(TPad& pad, std::vector<TGraph*>& graphs) {
+void collectGraphs(TVirtualPad& pad, std::vector<TGraph*>& graphs) {
   TIter next(pad.GetListOfPrimitives());
   while (auto* object = next()) {
     if (auto* graph = dynamic_cast<TGraph*>(object)) {
@@ -133,7 +134,7 @@ void collectGraphs(TPad& pad, std::vector<TGraph*>& graphs) {
           graphs.push_back(graph);
         }
       }
-    } else if (auto* nestedPad = dynamic_cast<TPad*>(object)) {
+    } else if (auto* nestedPad = dynamic_cast<TVirtualPad*>(object)) {
       collectGraphs(*nestedPad, graphs);
     }
   }
@@ -291,7 +292,7 @@ int makeGarfieldVelocityCurves(const std::string& fieldPlotPath,
       double velocity = 0.0;
       if (std::isfinite(electricField) && electricField >= 0.0 &&
           interpolateGraph(**graph, electricField, velocity)) {
-        velocityCurve.SetPoint(velocityCurve.GetN(), trackY, velocity);
+        velocityCurve.SetPoint(velocityCurve.GetN(), trackY, velocity * 1000.0);
       }
     }
     if (velocityCurve.GetN() > 0) {
