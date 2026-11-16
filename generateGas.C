@@ -45,8 +45,8 @@ int main(int argc, char* argv[]) {
   // For Demo, nE = 10, for Production, nE = 20.
   // Logarithmically spaced: 100 V/cm to 100 kV/cm.
   const size_t nE      = 20;
-  const double eMin    = 10.;    // V/cm
-  const double eMax    = 4e4; // V/cm
+  const double eMin    = 1.;    // V/cm
+  const double eMax    = 1e6; // V/cm
   constexpr bool useLog = true;
 
   // --- Magboltz collision count -----------------------------
@@ -63,35 +63,44 @@ int main(int argc, char* argv[]) {
   gas1.SetPressure(pressure);
   gas1.SetFieldGrid(eMin, eMax, nE, useLog);
   gas1.GenerateGasTable(ncoll);
-  gas1.WriteGasFile("ar_co2_90_10.gas");
-  std::cout << "Written: ar_co2_90_10.gas\n";
+  gas1.WriteGasFile("/storage/gpfs_data/neutrino/users/chiappon/DRIFT/Garfield/Drift_Readout_Simulation/gas_files/ar_90.0_co2_10.0_ovP_0.00_B_0.0_angle_0.0_E_1e0_1e6.gas");
+  std::cout << "Written: ar_90.0_co2_10.0_ovP_0.00_B_0.0_angle_0.0_E_1e0_1e6.gas\n";
+  
+  std::cout << "\n=== Generating table for Ar/CO2 90:10 - 5 mBar overpressure ===\n";
+  MediumMagboltz gas1("Ar", 90., "CO2", 10.);
+  gas1.SetTemperature(temperature);
+  gas1.SetPressure(pressure + 3.75031); // 5 mBar overpressure
+  gas1.SetFieldGrid(eMin, eMax, nE, useLog);
+  gas1.GenerateGasTable(ncoll);
+  gas1.WriteGasFile("/storage/gpfs_data/neutrino/users/chiappon/DRIFT/Garfield/Drift_Readout_Simulation/gas_files/ar_90.0_co2_10.0_ovP_5.00_B_0.0_angle_0.0_E_1e0_1e6.gas");
+  std::cout << "Written: ar_90.0_co2_10.0_ovP_5.00_B_0.0_angle_0.0_E_1e0_1e6.gas\n";
 
   // ==========================================================
   // Mixture 2: Ar 70% + CO2 30%  [YOUR TASK]
   // Study the worked example above, then complete the five
   // steps below for the second mixture.
   // ==========================================================
-  std::cout << "\n=== Generating table for Ar/CO2 70:30 ===\n";
-
-  MediumMagboltz gas2("Ar", 70., "CO2", 30.);
-  gas2.SetTemperature(temperature);
-  gas2.SetPressure(pressure);
-  gas2.SetFieldGrid(eMin, eMax, nE, useLog);
-  gas2.GenerateGasTable(ncoll);
-  gas2.WriteGasFile("ar_co2_70_30.gas");
-
-  std::cout << "Written: ar_co2_70_30.gas\n";
-
-  std::cout << "\n=== Generating table for Ar/CO2 85:15 ===\n";
-
-  MediumMagboltz gas3("Ar", 85., "CO2", 15.);
-  gas3.SetTemperature(temperature);
-  gas3.SetPressure(pressure);
-  gas3.SetFieldGrid(eMin, eMax, nE, useLog);
-  gas3.GenerateGasTable(ncoll);
-  gas3.WriteGasFile("ar_co2_85_15.gas");
-
-  std::cout << "Written: ar_co2_85_15.gas\n";
+//  std::cout << "\n=== Generating table for Ar/CO2 70:30 ===\n";
+//
+//  MediumMagboltz gas2("Ar", 70., "CO2", 30.);
+//  gas2.SetTemperature(temperature);
+//  gas2.SetPressure(pressure);
+//  gas2.SetFieldGrid(eMin, eMax, nE, useLog);
+//  gas2.GenerateGasTable(ncoll);
+//  gas2.WriteGasFile("ar_70.0_co2_30.0_ovP_5.00_B_0.0_angle_0.0_E_1e0_1e6.gas");
+//
+//  std::cout << "Written: ar_co2_70_30.gas\n";
+//
+//  std::cout << "\n=== Generating table for Ar/CO2 85:15 ===\n";
+//
+//  MediumMagboltz gas3("Ar", 85., "CO2", 15.);
+//  gas3.SetTemperature(temperature);
+//  gas3.SetPressure(pressure);
+//  gas3.SetFieldGrid(eMin, eMax, nE, useLog);
+//  gas3.GenerateGasTable(ncoll);
+//  gas3.WriteGasFile("ar_co2_85_15.gas");
+//
+//  std::cout << "Written: ar_co2_85_15.gas\n";
 
   return 0;
 }
