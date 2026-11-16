@@ -44,6 +44,12 @@ La macro `utils/spatial_res.cpp` divide la correlazione del tempo-at-threshold c
 root -l -q 'utils/spatial_res.cpp("20")'
 ```
 
+La macro `utils/analyseGas.C` carica direttamente da Garfield++ le tabelle `gas_files/ar_co2_90_10.gas`, `gas_files/ar_co2_85_15.gas` e `gas_files/ar_co2_70_30.gas`. Con l'ambiente Garfield++ configurato, interroga il medium su un intervallo logaritmico di campo elettrico da 1 a 10⁶ V/cm e confronta nello stesso grafico velocità di drift e coefficienti di diffusione longitudinale e trasversale per le tre miscele. Salva i canvas nel file `results/gasComparison.root` e le immagini in formato PNG; non richiede `results/gasParameters.root`:
+
+```sh
+root -l -q 'utils/analyseGas.C()'
+```
+
 La modalità `waveform` esegue `analyse_waveform.py` con `python3` sul file `results/runXX_waveform.root`. Per visualizzare un evento specifico:
 
 ```sh
