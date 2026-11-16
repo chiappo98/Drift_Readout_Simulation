@@ -67,12 +67,12 @@ int main(int argc, char* argv[]) {
   std::cout << "Written: ar_90.0_co2_10.0_ovP_0.00_B_0.0_angle_0.0_E_1e0_1e6.gas\n";
   
   std::cout << "\n=== Generating table for Ar/CO2 90:10 - 5 mBar overpressure ===\n";
-  MediumMagboltz gas1("Ar", 90., "CO2", 10.);
-  gas1.SetTemperature(temperature);
-  gas1.SetPressure(pressure + 3.75031); // 5 mBar overpressure
-  gas1.SetFieldGrid(eMin, eMax, nE, useLog);
-  gas1.GenerateGasTable(ncoll);
-  gas1.WriteGasFile("/storage/gpfs_data/neutrino/users/chiappon/DRIFT/Garfield/Drift_Readout_Simulation/gas_files/ar_90.0_co2_10.0_ovP_5.00_B_0.0_angle_0.0_E_1e0_1e6.gas");
+  MediumMagboltz gas11("Ar", 90., "CO2", 10.);
+  gas11.SetTemperature(temperature);
+  gas11.SetPressure(pressure + 3.75031); // 5 mBar overpressure
+  gas11.SetFieldGrid(eMin, eMax, nE, useLog);
+  gas11.GenerateGasTable(ncoll);
+  gas11.WriteGasFile("/storage/gpfs_data/neutrino/users/chiappon/DRIFT/Garfield/Drift_Readout_Simulation/gas_files/ar_90.0_co2_10.0_ovP_5.00_B_0.0_angle_0.0_E_1e0_1e6.gas");
   std::cout << "Written: ar_90.0_co2_10.0_ovP_5.00_B_0.0_angle_0.0_E_1e0_1e6.gas\n";
 
   // ==========================================================

@@ -17,13 +17,14 @@ Da Linux o WSL, con Garfield++ e ROOT configurati:
 
 ```sh
 bash setup.sh
+bash run.sh 01 generategas
 bash run.sh 01 simulation
 bash run.sh 01 analysis
 bash run.sh 01 waveform --event 0
 bash run.sh 01 raw-signal --event 0
 ```
 
-`setup.sh` crea le directory necessarie; `run.sh` lo richiama automaticamente. Il numero del run è obbligatorio e viene usato nei nomi `results/runXX.*`. Se si rilancia un numero già presente, i file corrispondenti vengono spostati in una sottocartella datata di `results/backup` prima della simulazione. La modalità `simulation` configura CMake, compila `drift` e lo avvia. Per passare JSON personalizzati: `bash run.sh 01 simulation config/config.json config/simulation.json`.
+`setup.sh` crea le directory necessarie; `run.sh` lo richiama automaticamente. Il numero del run è obbligatorio e viene usato nei nomi `results/runXX.*`. Se si rilancia un numero già presente, i file corrispondenti vengono spostati in una sottocartella datata di `results/backup` prima della simulazione. La modalità `generategas` configura CMake, compila il target `generateGas` e lo esegue per produrre i file `.gas` richiesti. La modalità `simulation` configura CMake, compila `drift` e lo avvia. Per passare JSON personalizzati: `bash run.sh 01 simulation config/config.json config/simulation.json`.
 
 Ogni simulazione salva in `results/runXX_configurations.txt` il contenuto dei due JSON effettivamente utilizzati (`config.json` e `simulation.json`), con intestazioni che li distinguono.
 

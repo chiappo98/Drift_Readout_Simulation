@@ -5,7 +5,7 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/build}"
 
 if (($# == 0)) || [[ ! "$1" =~ ^[0-9]+$ ]]; then
-  echo "Usage: $0 <run_number> [simulation|analysis|waveform|raw-signal] [config.json [simulation.json]]" >&2
+  echo "Usage: $0 <run_number> [simulation|analysis|waveform|raw-signal|generategas] [config.json [simulation.json]]" >&2
   exit 2
 fi
 
@@ -115,8 +115,17 @@ case "$MODE" in
     raw_signal_file="$ROOT_DIR/results/run${RUN_NUMBER}_raw_signal.root"
     python3 "$ROOT_DIR/analyse_raw_signal.py" "$raw_signal_file" "$@"
     ;;
+  generategas)
+    if (($# > 0)); then
+      echo "Usage: $0 <run_number> generategas" >&2
+      exit 2
+    fi
+    cmake -S "$ROOT_DIR" -B "$BUILD_DIR"
+    cmake --build "$BUILD_DIR" --target generateGas
+    (cd "$BUILD_DIR" && ./generateGas)
+    ;;
   *)
-    echo "Usage: $0 <run_number> [simulation|analysis|waveform|raw-signal] [config.json [simulation.json]]" >&2
+    echo "Usage: $0 <run_number> [simulation|analysis|waveform|raw-signal|generategas] [config.json [simulation.json]]" >&2
     exit 2
     ;;
 esac
