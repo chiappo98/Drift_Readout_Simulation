@@ -930,6 +930,7 @@ int main(int argc, char* argv[]) {
     drift_ind->EnablePlotting(driftView_rkf);
 
     //track_ind->DisableDeltaElectronTransport();  
+    // track_ind->EnableCoulombScattering();
 
     std::random_device randomSeed;
     std::mt19937 randomEngine(randomSeed());
