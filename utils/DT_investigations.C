@@ -536,7 +536,7 @@ void DT_investigations(const char* runNumber, double tRiseMin,
 
     const std::array<double, 2> referenceY{{-0.7, 0.7}};
     std::vector<std::unique_ptr<TEllipse>> referenceCircles;
-    referenceCircles.reserve(referenceY.size() + 1);
+    referenceCircles.reserve(referenceY.size() + 2);
     for (const double y : referenceY) {
       auto circle = std::make_unique<TEllipse>(0.0, y, 0.0125, 0.0125);
       circle->SetLineColor(kBlack);
@@ -545,6 +545,15 @@ void DT_investigations(const char* runNumber, double tRiseMin,
       circle->Draw("same");
       referenceCircles.push_back(std::move(circle));
     }
+    auto riseCircle =
+        std::make_unique<TEllipse>(0.0, 0.0, selectedEvent.tRise * 0.0048,
+                                   selectedEvent.tRise * 0.0048);
+    riseCircle->SetLineColor(kRed);
+    riseCircle->SetLineStyle(2);
+    riseCircle->SetFillStyle(0);
+    riseCircle->Draw("same");
+    referenceCircles.push_back(std::move(riseCircle));
+
     auto originCircle = std::make_unique<TEllipse>(0.0, 0.0, 0.0075, 0.0075);
     originCircle->SetLineColor(kBlack);
     originCircle->SetFillColor(kBlack);
