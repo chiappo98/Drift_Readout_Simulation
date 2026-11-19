@@ -4,6 +4,7 @@
 #include <TFile.h>
 #include <TGraph.h>
 #include <TLegend.h>
+#include <TSystem.h>
 
 #include <algorithm>
 #include <cmath>
@@ -166,12 +167,30 @@ void drawComparison(TCanvas& canvas, const std::vector<GasCurve>& curves,
 
 }  // namespace
 
-void analyseGas(const char* gasDirectory = "gas_files",
-                const char* outputPath = "results/gasComparison.root") {
+void analyseGas() {
+  // --- Configurazione interna: modifica questa lista ---
+  // Aggiungi o rimuovi righe liberamente. Ogni riga contiene:
+  // {nome file, testo legenda, colore ROOT}.
   const std::vector<GasMixture> mixtures = {
       {"ar_co2_90_10.gas", "Ar-CO_{2} 90-10", kAzure + 2},
-      {"ar_co2_85_15.gas", "Ar-CO_{2} 85-15", kOrange + 7},
-      {"ar_co2_70_30.gas", "Ar-CO_{2} 70-30", kViolet + 1}};
+      {"ar_90.0_co2_10.0_ovP_3.00_B_0.0_angle_0.0_E_1e0_1e6.gas", "Ar-CO_{2} 90-10 ale", kOrange + 7},
+      // {"ar_co2_70_30.gas", "Ar-CO_{2} 70-30", kViolet + 1}
+    };
+
+  const std::string gasDirectory = "gas_files";
+  const std::string outputDirectory = "results";
+  const std::string outputRoot = outputDirectory + "/gasComparison.root";
+  const std::string outputVelocity =
+      outputDirectory + "/gasComparison_velocity.png";
+  const std::string outputDiffusion =
+      outputDirectory + "/gasComparison_diffusion.png";
+
+  if (mixtures.empty()) {
+    std::cerr << "Nessun file gas configurato nella lista mixtures."
+              << std::endl;
+    return;
+  }
+  gSystem->mkdir(outputDirectory.c_str(), true);
 
   std::vector<GasCurve> velocityCurves;
   std::vector<GasCurve> diffusionCurves;
@@ -201,17 +220,17 @@ void analyseGas(const char* gasDirectory = "gas_files",
                  "Diffusion coefficient [cm^{1/2}]",
                  "Diffusion coefficient [cm^{1/2}]");
 
-  std::unique_ptr<TFile> output(TFile::Open(outputPath, "RECREATE"));
+  std::unique_ptr<TFile> output(TFile::Open(outputRoot.c_str(), "RECREATE"));
   if (!output || output->IsZombie()) {
-    std::cerr << "Cannot create gas-comparison file: " << outputPath
+    std::cerr << "Cannot create gas-comparison file: " << outputRoot
               << std::endl;
     return;
   }
   velocityComparison.Write();
   diffusionComparison.Write();
-  velocityComparison.SaveAs("results/gasComparison_velocity.png");
-  diffusionComparison.SaveAs("results/gasComparison_diffusion.png");
+  velocityComparison.SaveAs(outputVelocity.c_str());
+  diffusionComparison.SaveAs(outputDiffusion.c_str());
   output->Close();
-  std::cout << "Saved Garfield gas comparison plots to " << outputPath
+  std::cout << "Saved Garfield gas comparison plots to " << outputRoot
             << std::endl;
 }
