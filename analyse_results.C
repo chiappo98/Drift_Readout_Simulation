@@ -261,8 +261,12 @@ void analyse_correlations(const char* runNumber) {
     }
     const auto xRange = axisRange(xValues);
     const auto yRange = axisRange(yValues);
-    auto* histogram = new TH2D(names[i], titles[i], 100, xRange.first,
-                               xRange.second, 100, yRange.first,
+    const int xBins =
+        std::string(names[i]) == "h2_riseTime_vs_trackY" ? 400 : 100;
+    const int yBins =
+        std::string(names[i]) == "h2_riseTime_vs_trackY" ? 1000 : 100;
+    auto* histogram = new TH2D(names[i], titles[i], xBins, xRange.first,
+                               xRange.second, yBins, yRange.first,
                                yRange.second);
     for (const auto& point : points[i]) {
       histogram->Fill(point.first, point.second);
