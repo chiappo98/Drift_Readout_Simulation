@@ -303,11 +303,11 @@ void writeConfigurationSnapshot(const std::string& runNumber,
 
 // This function simulates the response of the front-end electronics (shaper)
 double transfer1ord(double time) {
-  return -1 * (time / shapingTimeNs) * exp(1.0 - time / shapingTimeNs);
+  return -1 * (time / shapingTimeNs) * std::exp(1.0 - time / shapingTimeNs);
 }
 
 double transfer3ord(double time) {
-  return -1 * pow(time / shapingTimeNs, 3) * exp(3 * (1.0 - time / shapingTimeNs));
+  return -1 * std::pow(time / shapingTimeNs, 3) * std::exp(3 * (1.0 - time / shapingTimeNs));
 }
 
 double transferVTX(double time) {
@@ -317,7 +317,7 @@ double transferVTX(double time) {
   const double vtx_tau = 3.06;
   const double vtx_t0 = 1.463; // time offset from the fit
   time-=vtx_t0;
-  return time > 0 ? vtx_gain * pow(time / (vtx_n * vtx_tau), vtx_n) * exp(vtx_n - time / vtx_tau) : 0.0; // [mV]
+  return time > 0 ? vtx_gain * std::pow(time / (vtx_n * vtx_tau), vtx_n) * std::exp(vtx_n - time / vtx_tau) : 0.0; // [mV]
 }
 
 double compute_mean(std::vector<double> v) {
@@ -372,7 +372,7 @@ int main(int argc, char* argv[]) {
   MediumMagboltz gas;
   gas.SetTemperature(293.15); //298.15
   gas.SetPressure(763.7); // 5 mBar overpressure
-  gas.SetComposition("ar", config.argonPercent, "co2", config.co2Percent);
+  gas.SetComposition("ar", 90., "co2", 10.); //("ar", config.argonPercent, "co2", config.co2Percent);
   gas.Initialise(true);
   gas.EnablePenningTransfer();
   // Set the Penning transfer efficiency.
@@ -395,7 +395,7 @@ int main(int argc, char* argv[]) {
   gas2.EnablePenningTransfer();
 
   // Load gas file with diffusion information (pre-calculated with Magboltz)
-  if (!gas.LoadGasFile("/home/student/Software/GARFIELDPP_with_GEANT4_from_source_20260510/Examples/DriftDune/gas_files/ar_co2_90_10.gas")) {
+  if (!gas.LoadGasFile("/home/student/Software/GARFIELDPP_with_GEANT4_from_source_20260510/Examples/DriftDune/gas_files/ar_90.0_co2_10.0_ovP_3.00_B_0.0_angle_0.0_E_1e0_1e6.gas")) {
       std::cerr << "Error: Could not load gas file. Ensure it exists." << std::endl;
       return 1;
   }
