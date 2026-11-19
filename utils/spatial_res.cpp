@@ -46,7 +46,7 @@ double crystalBall(double* x, double* parameters) {
   }
 
   const double standardized = (x[0] - parameters[1]) / parameters[2];
-  if (standardized > -alpha) {
+  if (standardized < alpha) {
     return parameters[0] * std::exp(-0.5 * standardized * standardized);
   }
 
@@ -54,7 +54,17 @@ double crystalBall(double* x, double* parameters) {
       std::pow(exponent / alpha, exponent) * std::exp(-0.5 * alpha * alpha);
   const double offset = exponent / alpha - alpha;
   return parameters[0] * coefficient *
-         std::pow(offset - standardized, -exponent);
+         std::pow(offset + standardized, -exponent);
+}
+
+double crystalBallWithLowSideOffset(double* x, double* parameters) {
+  const double lowSideOffset = x[0] < parameters[1] ? parameters[5] : 0.0;
+  return crystalBall(x, parameters) + lowSideOffset;
+}
+
+double crystalBallLeftTail(double* x, double* parameters) {
+  double reflectedX = 2.0 * parameters[1] - x[0];
+  return crystalBall(&reflectedX, parameters);
 }
 
 std::string twoDigits(int value) {
@@ -499,11 +509,14 @@ void spatial_res(const char* runNumber) {
       const double meanStart =
           distribution->GetXaxis()->GetBinCenter(distribution->GetMaximumBin());
       TF1 crystalBallFit(("crystal_ball_fit_" + sliceId).c_str(),
-                         crystalBall, distribution->GetXaxis()->GetXmin(),
-                         distribution->GetXaxis()->GetXmax(), 5);
-      crystalBallFit.SetParNames("Amplitude", "MPV", "Sigma", "Alpha", "N");
+                         crystalBallWithLowSideOffset,
+                         distribution->GetXaxis()->GetXmin(),
+                         distribution->GetXaxis()->GetXmax(), 6);
+      crystalBallFit.SetParNames("Amplitude", "MPV", "Sigma", "Alpha", "N",
+                                 "Low-side offset");
       crystalBallFit.SetParameters(distribution->GetMaximum(), meanStart,
-                                   sigmaStart, 1.5, 3.0);
+                                   sigmaStart, 1.5, 3.0,
+                                   distribution->GetMinimum());
       crystalBallFit.SetParLimits(0, 0.0, distribution->GetMaximum() * 100.0);
       crystalBallFit.SetParLimits(1, distribution->GetXaxis()->GetXmin(),
                                   distribution->GetXaxis()->GetXmax());
@@ -512,6 +525,7 @@ void spatial_res(const char* runNumber) {
                                       distribution->GetXaxis()->GetXmin());
       crystalBallFit.SetParLimits(3, 0.1, 10.0);
       crystalBallFit.SetParLimits(4, 1.01, 100.0);
+      crystalBallFit.SetParLimits(5, 0.0, distribution->GetMaximum());
       const int fitStatus = distribution->Fit(&crystalBallFit, "QRS0");
       fitSucceeded = fitStatus == 0;
       if (fitSucceeded) {
@@ -955,7 +969,7 @@ void spatial_res(const char* runNumber) {
           const double sigmaStart = std::max(histogram.GetRMS(), binWidth);
           const double meanStart = histogram.GetXaxis()->GetBinCenter(
               histogram.GetMaximumBin());
-          TF1 residualFit(fitName.c_str(), crystalBall, -0.3, 0.3, 5);
+          TF1 residualFit(fitName.c_str(), crystalBallLeftTail, -0.3, 0.3, 5);
           residualFit.SetParNames("Amplitude", "MPV", "Sigma", "Alpha", "N");
           residualFit.SetParameters(histogram.GetMaximum(), meanStart,
                                     sigmaStart, 1.5, 3.0);
