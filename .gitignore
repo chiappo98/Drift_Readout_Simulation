@@ -5,3 +5,4 @@ results/*
 json/*
 json
 HTCondorScripts
+env.sh
