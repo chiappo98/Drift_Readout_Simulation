@@ -39,7 +39,7 @@ int main(int argc, char* argv[]) {
 
   // --- Conditions -------------------------------------------
   const double pressure    = AtmosphericPressure; // 760 Torr
-  const double temperature = 298.15;              // 20 deg C in Kelvin
+  const double temperature = 293.15;              // 20 deg C in Kelvin
 
   // --- Electric field grid ----------------------------------
   // For Demo, nE = 10, for Production, nE = 20.
@@ -61,7 +61,12 @@ int main(int argc, char* argv[]) {
   MediumMagboltz gas1("Ar", 90., "CO2", 10.);
   gas1.SetTemperature(temperature);
   gas1.SetPressure(pressure);
+  gas1.LoadIonMobility(path + "/storage/gpfs_data/neutrino/users/chiappon/DRIFT/Garfield/Drift_Readout_Simulation/gas_files/IonMobility_Ar+_Ar.txt");
+  gas1.LoadIonMobility(path + "/storage/gpfs_data/neutrino/users/chiappon/DRIFT/Garfield/Drift_Readout_Simulation/gas_files/IonMobility_CO2+_CO2.txt");
   gas1.SetFieldGrid(eMin, eMax, nE, useLog);
+  gas1.EnablePenningTransfer();
+  gas1.EnableDeexcitation();
+  gas1.EnableThermalMotion(true);
   gas1.GenerateGasTable(ncoll);
   gas1.WriteGasFile("/storage/gpfs_data/neutrino/users/chiappon/DRIFT/Garfield/Drift_Readout_Simulation/gas_files/ar_90.0_co2_10.0_ovP_0.00_B_0.0_angle_0.0_E_1e0_1e6.gas");
   std::cout << "Written: ar_90.0_co2_10.0_ovP_0.00_B_0.0_angle_0.0_E_1e0_1e6.gas\n";
@@ -70,7 +75,12 @@ int main(int argc, char* argv[]) {
   MediumMagboltz gas11("Ar", 90., "CO2", 10.);
   gas11.SetTemperature(temperature);
   gas11.SetPressure(pressure + 3.75031); // 5 mBar overpressure
+  gas11.LoadIonMobility(path + "/storage/gpfs_data/neutrino/users/chiappon/DRIFT/Garfield/Drift_Readout_Simulation/gas_files/IonMobility_Ar+_Ar.txt");
+  gas11.LoadIonMobility(path + "/storage/gpfs_data/neutrino/users/chiappon/DRIFT/Garfield/Drift_Readout_Simulation/gas_files/IonMobility_CO2+_CO2.txt");
   gas11.SetFieldGrid(eMin, eMax, nE, useLog);
+  gas11.EnablePenningTransfer();
+  gas11.EnableDeexcitation();
+  gas11.EnableThermalMotion(true);
   gas11.GenerateGasTable(ncoll);
   gas11.WriteGasFile("/storage/gpfs_data/neutrino/users/chiappon/DRIFT/Garfield/Drift_Readout_Simulation/gas_files/ar_90.0_co2_10.0_ovP_5.00_B_0.0_angle_0.0_E_1e0_1e6.gas");
   std::cout << "Written: ar_90.0_co2_10.0_ovP_5.00_B_0.0_angle_0.0_E_1e0_1e6.gas\n";
