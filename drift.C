@@ -466,6 +466,16 @@ int main(int argc, char* argv[]) {
   if (plotField) {
     const std::string fieldPlotFileName = buildFieldPlotFilename(config);
 
+    DriftLineRKF drift;
+    drift.SetSensor(&sensor);
+    drift.UseWeightingPotential(true);
+    // drift.SetMaximumStepSize();
+    drift.RejectKinks(true);
+    drift.EnableSignalCalculation(true);
+    drift.SetIntegrationAccuracy(1e-9);
+    drift.EnableAvalanche(true);
+    drift.EnableIonTail(true);
+
     // TCanvas* cf = new TCanvas("cf", "multi-cell view", 300, 1000);
     // // fieldView.SetArea(-cell_t/2,-cell_w, 0, cell_t/2, cell_w, 0);
     // fieldView.SetCanvas(cf);
@@ -554,7 +564,7 @@ int main(int argc, char* argv[]) {
     const int np_y = (int)(cell_w / map_spacing);
     double xp = 0., yp = 0., zp = 0., t_fin = 0.;
     double e_gain = 0., e_loss = 0., drift_t = 0., i_drift_t = 0., dt_sigma = 0.,
-           i_dt_sigma = 0., path_len = 0., av_ne = 0., av_ni = 0.;
+           i_dt_sigma = 0., path_len = 0.;
     int drift_st = 0, i_drift_st = 0;
     std::array<double, 3> e_field = {0., 0., 0.};
     std::array<double, 3> b_field = {0., 0., 0.};
@@ -562,12 +572,17 @@ int main(int argc, char* argv[]) {
     double v_mag = 0.;
 
     TH2D* h_v = new TH2D("h_v", "Drift Velocity", np_x, -cell_t/2, cell_t/2, np_y, -cell_w/2, cell_w/2);
+    TH2D* h_gain = new TH2D("h_gain", "Multiplication Factor", np_x, -cell_t/2, cell_t/2, np_y, -cell_w/2, cell_w/2);
+    TH2D* h_loss = new TH2D("h_loss", "Attachment Loss", np_x, -cell_t/2, cell_t/2, np_y, -cell_w/2, cell_w/2);
+    TH2D* h_drift_time = new TH2D("h_drift_time", "Drift Time", np_x, -cell_t/2, cell_t/2, np_y, -cell_w/2, cell_w/2);
+    TH2D* h_drift_time_sigma = new TH2D("h_drift_time_sigma", "Arrival Time Spread", np_x, -cell_t/2, cell_t/2, np_y, -cell_w/2, cell_w/2);
+    TH2D* h_path_len = new TH2D("h_path_len", "Path Length", np_x, -cell_t/2, cell_t/2, np_y, -cell_w/2, cell_w/2);
 
       // map the electron response
-    for (int cx = 0; cx <= np_x; cx++) {
-      xp = -cell_t/2 + cx * map_spacing;
-      for (int cy = 0; cy <= np_y; cy++) {
-        yp = -cell_w/2 + cy * map_spacing;
+    for (int cx = 0; cx < np_x; cx++) {
+      xp = h_v->GetXaxis()->GetBinCenter(cx + 1);
+      for (int cy = 0; cy < np_y; cy++) {
+        yp = h_v->GetYaxis()->GetBinCenter(cy + 1);
 
         // 7-1 get the E and B field components for
         sensor.MagneticField(xp, yp, zp, b_field[0], b_field[1], b_field[2], drift_st);
@@ -580,7 +595,19 @@ int main(int argc, char* argv[]) {
                               b_field[1], b_field[2], drift_v[0], drift_v[1],
                               drift_v[2]);
         v_mag = 1e4*std::sqrt(drift_v[0]*drift_v[0]+drift_v[1]*drift_v[1]+drift_v[2]*drift_v[2]);
-        h_v->Fill(xp, yp, v_mag);
+        h_v->SetBinContent(cx + 1, cy + 1, v_mag);
+
+        drift.DriftElectron(xp, yp, zp, 0.);
+        path_len = drift.GetPathLength();
+        drift_t = drift.GetDriftTime();
+        dt_sigma = drift.GetArrivalTimeSpread();
+        e_gain = drift.GetGain();
+        e_loss = drift.GetLoss();
+        h_gain->SetBinContent(cx + 1, cy + 1, e_gain);
+        h_loss->SetBinContent(cx + 1, cy + 1, e_loss);
+        h_drift_time->SetBinContent(cx + 1, cy + 1, drift_t);
+        h_drift_time_sigma->SetBinContent(cx + 1, cy + 1, dt_sigma);
+        h_path_len->SetBinContent(cx + 1, cy + 1, path_len);
       }
     }
 
@@ -592,7 +619,7 @@ int main(int argc, char* argv[]) {
     h_v->Draw("colz");
     h_v->SetMaximum(50.);
     h_v->GetXaxis()->SetTitle("x (cm)");
-    h_v->GetYaxis()->SetTitle("z (cm)");
+    h_v->GetYaxis()->SetTitle("y (cm)");
     c_v->SetRealAspectRatio();
 
     // Output File Path
@@ -606,6 +633,11 @@ int main(int argc, char* argv[]) {
     cf2->Write();
     c_v->Write();
     h_v->Write();
+    h_gain->Write();
+    h_loss->Write();
+    h_drift_time->Write();
+    h_drift_time_sigma->Write();
+    h_path_len->Write();
     fieldFile.Close();
     std::cout << "Saved field plot to file " << fieldPlotFileName << std::endl;
 
@@ -921,7 +953,9 @@ int main(int argc, char* argv[]) {
     DriftLineRKF* drift_ind = new DriftLineRKF();
     drift_ind->SetSensor(&sensor);
     drift_ind->EnableIonTail();
-    drift_ind->UseWeightingPotential();
+    drift_ind->UseWeightingPotential(true);
+    drift_ind->RejectKinks(true);
+    drift_ind->SetIntegrationAccuracy(1e-9);
     
     ViewDrift* driftView_rkf = new ViewDrift();
     
@@ -930,7 +964,7 @@ int main(int argc, char* argv[]) {
     drift_ind->EnablePlotting(driftView_rkf);
 
     //track_ind->DisableDeltaElectronTransport();  
-    // track_ind->EnableCoulombScattering();
+    //track_ind->EnableCoulombScattering();
 
     std::random_device randomSeed;
     std::mt19937 randomEngine(randomSeed());
