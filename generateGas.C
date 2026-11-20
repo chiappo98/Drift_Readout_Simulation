@@ -61,8 +61,8 @@ int main(int argc, char* argv[]) {
   MediumMagboltz gas1("Ar", 90., "CO2", 10.);
   gas1.SetTemperature(temperature);
   gas1.SetPressure(pressure);
-  gas1.LoadIonMobility(path + "/storage/gpfs_data/neutrino/users/chiappon/DRIFT/Garfield/Drift_Readout_Simulation/gas_files/IonMobility_Ar+_Ar.txt");
-  gas1.LoadIonMobility(path + "/storage/gpfs_data/neutrino/users/chiappon/DRIFT/Garfield/Drift_Readout_Simulation/gas_files/IonMobility_CO2+_CO2.txt");
+  gas1.LoadIonMobility("/storage/gpfs_data/neutrino/users/chiappon/DRIFT/Garfield/Drift_Readout_Simulation/gas_files/IonMobility_Ar+_Ar.txt");
+  gas1.LoadIonMobility("/storage/gpfs_data/neutrino/users/chiappon/DRIFT/Garfield/Drift_Readout_Simulation/gas_files/IonMobility_CO2+_CO2.txt");
   gas1.SetFieldGrid(eMin, eMax, nE, useLog);
   gas1.EnablePenningTransfer();
   gas1.EnableDeexcitation();
@@ -75,8 +75,8 @@ int main(int argc, char* argv[]) {
   MediumMagboltz gas11("Ar", 90., "CO2", 10.);
   gas11.SetTemperature(temperature);
   gas11.SetPressure(pressure + 3.75031); // 5 mBar overpressure
-  gas11.LoadIonMobility(path + "/storage/gpfs_data/neutrino/users/chiappon/DRIFT/Garfield/Drift_Readout_Simulation/gas_files/IonMobility_Ar+_Ar.txt");
-  gas11.LoadIonMobility(path + "/storage/gpfs_data/neutrino/users/chiappon/DRIFT/Garfield/Drift_Readout_Simulation/gas_files/IonMobility_CO2+_CO2.txt");
+  gas11.LoadIonMobility("/storage/gpfs_data/neutrino/users/chiappon/DRIFT/Garfield/Drift_Readout_Simulation/gas_files/IonMobility_Ar+_Ar.txt");
+  gas11.LoadIonMobility("/storage/gpfs_data/neutrino/users/chiappon/DRIFT/Garfield/Drift_Readout_Simulation/gas_files/IonMobility_CO2+_CO2.txt");
   gas11.SetFieldGrid(eMin, eMax, nE, useLog);
   gas11.EnablePenningTransfer();
   gas11.EnableDeexcitation();
