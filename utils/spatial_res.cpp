@@ -12,6 +12,7 @@
 #include <TLegend.h>
 #include <TMultiGraph.h>
 #include <TPad.h>
+#include <TPaveText.h>
 #include <TSpline.h>
 #include <TSystem.h>
 #include <TTree.h>
@@ -23,6 +24,7 @@
 #include <iomanip>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <regex>
 #include <sstream>
@@ -36,6 +38,7 @@ namespace {
 constexpr int kSlices = 23;
 constexpr double kSplineMinimumTrackY = -0.65;
 constexpr double kSplineMaximumTrackY = 0.0;
+constexpr double kResolutionFitMinimumTrackY = -0.6;
 constexpr int kResidualBins = 14;
 
 double crystalBall(double* x, double* parameters) {
@@ -65,6 +68,37 @@ double crystalBallWithLowSideOffset(double* x, double* parameters) {
 double crystalBallLeftTail(double* x, double* parameters) {
   double reflectedX = 2.0 * parameters[1] - x[0];
   return crystalBall(&reflectedX, parameters);
+}
+
+double residualResolutionComponents(double* x, double* parameters) {
+  const double primaryIonization =
+      parameters[0] * std::exp(-parameters[0] * (-x[0])); //std::abs
+  const double electronics =
+      parameters[2] + parameters[3] * std::exp(parameters[4] * x[0]);
+  if (!std::isfinite(primaryIonization) || !std::isfinite(electronics)) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  const double variance = primaryIonization * primaryIonization +
+                          parameters[1] * (-x[0]) +    //std::abs
+                          electronics * electronics;
+  return variance > 0.0 && std::isfinite(variance)
+             ? std::sqrt(variance)
+             : std::numeric_limits<double>::quiet_NaN();
+}
+
+double primaryIonizationResolution(double* x, double* parameters) {
+  return parameters[0] * std::exp(-parameters[0] *(-x[0]));  // std::abs
+}
+
+double diffusionResolution(double* x, double* parameters) {
+  return std::sqrt(std::max(0.0, parameters[0] * (-x[0]))); //std::abs(x[0])
+}
+
+double electronicsResolution(double* x, double* parameters) {
+  const double component =
+      parameters[0] + parameters[1] * std::exp(parameters[2] * x[0]);
+  return std::isfinite(component) ? component
+                                  : std::numeric_limits<double>::quiet_NaN();
 }
 
 std::string twoDigits(int value) {
@@ -939,6 +973,22 @@ void spatial_res(const char* runNumber) {
   linearResidualSigmaGraph.SetMarkerStyle(22);
   linearResidualSigmaGraph.SetMarkerColor(kMagenta + 1);
   linearResidualSigmaGraph.SetLineColor(kMagenta + 1);
+  TGraphErrors residualMpvGraph;
+  residualMpvGraph.SetName("residual_crystal_ball_mpv_vs_slice");
+  residualMpvGraph.SetTitle(
+      "Spline residual MPV vs true track y;"
+      "True track y slice center [cm];Crystal Ball MPV [#mum]");
+  residualMpvGraph.SetMarkerStyle(20);
+  residualMpvGraph.SetMarkerColor(kBlue + 1);
+  residualMpvGraph.SetLineColor(kBlue + 1);
+  TGraphErrors linearResidualMpvGraph;
+  linearResidualMpvGraph.SetName("linear_residual_crystal_ball_mpv_vs_slice");
+  linearResidualMpvGraph.SetTitle(
+      "Linear-fit residual MPV vs true track y;"
+      "True track y slice center [cm];Crystal Ball MPV [#mum]");
+  linearResidualMpvGraph.SetMarkerStyle(22);
+  linearResidualMpvGraph.SetMarkerColor(kMagenta + 1);
+  linearResidualMpvGraph.SetLineColor(kMagenta + 1);
   TGraph residualRmsGraph;
   residualRmsGraph.SetName("residual_rms_vs_slice");
   residualRmsGraph.SetTitle(
@@ -959,7 +1009,8 @@ void spatial_res(const char* runNumber) {
         std::make_unique<TLegend>(0.47, 0.70, 0.89, 0.89);
     const auto fitResidualHistogram =
         [&](TH1D& histogram, const std::string& fitName, int color,
-            const char* label, TGraphErrors& sigmaGraph) {
+            const char* label, TGraphErrors& sigmaGraph,
+            TGraphErrors& mpvGraph) {
           if (histogram.GetEntries() <= 0.0 || histogram.GetMaximum() <= 0.0) {
             std::cerr << label << " residual slice " << bin + 1
                       << " is empty; skipping Crystal Ball fit." << std::endl;
@@ -1000,15 +1051,20 @@ void spatial_res(const char* runNumber) {
                               residualFit.GetParameter(2) * 10000.0);
           sigmaGraph.SetPointError(sigmaGraph.GetN() - 1, 0.0,
                                    residualFit.GetParError(2) * 10000.0);
+          mpvGraph.SetPoint(mpvGraph.GetN(), sliceCenter,
+                            residualFit.GetParameter(1) * 10000.0);
+          mpvGraph.SetPointError(mpvGraph.GetN() - 1, 0.0,
+                                 residualFit.GetParError(1) * 10000.0);
         };
     fitResidualHistogram(
         residualHistogram,
         "residual_crystal_ball_fit_" + twoDigits(bin + 1), kRed + 1,
-        "Spline residuals", residualSigmaGraph);
+        "Spline residuals", residualSigmaGraph, residualMpvGraph);
     fitResidualHistogram(
         *linearResidualHistograms[bin],
         "linear_residual_crystal_ball_fit_" + twoDigits(bin + 1),
-        kMagenta + 1, "Linear residuals", linearResidualSigmaGraph);
+        kMagenta + 1, "Linear residuals", linearResidualSigmaGraph,
+        linearResidualMpvGraph);
 
     outputFile->cd();
     if (residualHistogram.Write() <= 0 ||
@@ -1046,6 +1102,33 @@ void spatial_res(const char* runNumber) {
       runBase + "_spatial_residuals.png";
   residualCanvas.SaveAs(residualPlotPath.c_str());
 
+  TMultiGraph residualMeans;
+  residualMeans.SetName("residual_mpv_vs_slice");
+  residualMeans.SetTitle(
+      "Crystal Ball residual MPV vs true track y;"
+      "True track y slice center [cm];Crystal Ball MPV [#mum]");
+  residualMeans.Add(&residualMpvGraph, "P");
+  residualMeans.Add(&linearResidualMpvGraph, "P");
+  TCanvas meansCanvas("c_residual_mpv",
+                      "Crystal Ball residual MPV by true position", 1000,
+                      700);
+  residualMeans.Draw("A");
+  residualMeans.GetXaxis()->SetLimits(kSplineMinimumTrackY,
+                                      kSplineMaximumTrackY);
+  residualMeans.GetYaxis()->SetTitle("Crystal Ball MPV [#mum]");
+  TLegend meansLegend(0.64, 0.78, 0.88, 0.89);
+  meansLegend.AddEntry(&residualMpvGraph, "Spline residuals", "p");
+  meansLegend.AddEntry(&linearResidualMpvGraph, "Linear-fit residuals", "p");
+  meansLegend.Draw();
+  outputFile->cd();
+  if (residualMpvGraph.Write() <= 0 ||
+      linearResidualMpvGraph.Write() <= 0 || residualMeans.Write() <= 0 ||
+      meansCanvas.Write() <= 0) {
+    std::cerr << "Failed to write residual-MPV output to " << rootPath
+              << std::endl;
+    return;
+  }
+
   residualRmsGraph.SetLineWidth(2);
   TMultiGraph residualWidths;
   residualWidths.SetName("residual_widths_vs_slice");
@@ -1063,17 +1146,262 @@ void spatial_res(const char* runNumber) {
   residualWidths.GetYaxis()->SetTitle("Width [#mum]");
   residualWidths.SetMinimum(0.0);
   residualWidths.SetMaximum(600.0);
+  std::unique_ptr<TF1> linearResidualResolutionFit;
+  std::array<std::unique_ptr<TF1>, 3> resolutionComponents;
+  std::unique_ptr<TPaveText> resolutionFitParameters;
+  TGraphErrors resolutionFitData;
+  TGraph resolutionFitCurve;
+  std::array<TGraph, 3> resolutionFitComponentCurves;
+  TMultiGraph resolutionFitPlot;
+  std::unique_ptr<TCanvas> resolutionFitCanvas;
+  std::unique_ptr<TLegend> resolutionFitLegend;
+  std::unique_ptr<TPaveText> resolutionFitUnavailableText;
+  resolutionFitData.SetName("linear_residual_sigma_fit_data");
+  resolutionFitData.SetTitle(
+      "Linear-fit residual width;True track y [cm];Width [#mum]");
+  resolutionFitData.SetMarkerStyle(22);
+  resolutionFitData.SetMarkerColor(kMagenta + 1);
+  resolutionFitData.SetLineColor(kMagenta + 1);
+  for (int point = 0; point < linearResidualSigmaGraph.GetN(); ++point) {
+    double x = 0.0;
+    double y = 0.0;
+    linearResidualSigmaGraph.GetPoint(point, x, y);
+    const int fitDataPoint = resolutionFitData.GetN();
+    resolutionFitData.SetPoint(fitDataPoint, x, y);
+    resolutionFitData.SetPointError(
+        fitDataPoint, linearResidualSigmaGraph.GetErrorX(point),
+        linearResidualSigmaGraph.GetErrorY(point));
+  }
+  resolutionFitPlot.SetName("linear_residual_resolution_fit_plot");
+  resolutionFitPlot.SetTitle(
+      "Linear-fit residual resolution components;"
+      "True track y [cm];Width [#mum]");
+  resolutionFitPlot.Add(&resolutionFitData, "P");
+  if (linearResidualSigmaGraph.GetN() >= 3) {
+    double minimumWidth = std::numeric_limits<double>::infinity();
+    double maximumWidth = 0.0;
+    for (int point = 0; point < linearResidualSigmaGraph.GetN(); ++point) {
+      double x = 0.0;
+      double width = 0.0;
+      linearResidualSigmaGraph.GetPoint(point, x, width);
+      minimumWidth = std::min(minimumWidth, width);
+      maximumWidth = std::max(maximumWidth, width);
+    }
+
+    linearResidualResolutionFit = std::make_unique<TF1>(
+        "linear_residual_resolution_components_fit",
+        residualResolutionComponents, kResolutionFitMinimumTrackY,
+        kSplineMaximumTrackY, 5);
+    linearResidualResolutionFit->SetTitle(
+        "Linear-fit residual resolution components");
+    linearResidualResolutionFit->SetParNames("n", "d", "c", "f", "k");
+    constexpr double kPositiveParameterMinimum = 1.0e-6;
+    const double maximumAbsTrackY =
+        std::abs(kResolutionFitMinimumTrackY);
+    linearResidualResolutionFit->SetParameters(
+        40.0, maximumWidth * maximumWidth / maximumAbsTrackY, 70.0, 100.0,
+        20.0);
+    linearResidualResolutionFit->SetParLimits(0, 10.000001, 100.0);
+    linearResidualResolutionFit->SetParLimits(
+        1, 20,
+        100.0 * maximumWidth * maximumWidth / maximumAbsTrackY);
+    linearResidualResolutionFit->SetParLimits(
+        2, kPositiveParameterMinimum,
+        std::max(10.0 * maximumWidth, 140.0));
+    linearResidualResolutionFit->SetParLimits(
+        3, kPositiveParameterMinimum, std::max(10.0 * maximumWidth, 200.0));
+    linearResidualResolutionFit->SetParLimits(4, 1.0, 100.0);
+    const int fitStatus =
+        linearResidualSigmaGraph.Fit(linearResidualResolutionFit.get(),
+                                     "QRS0");
+    if (fitStatus == 0) {
+      linearResidualResolutionFit->SetLineColor(kOrange + 7);
+      linearResidualResolutionFit->SetLineWidth(3);
+      linearResidualResolutionFit->Draw("SAME");
+      constexpr std::array<const char*, 3> componentNames = {
+          "primary_ionization_resolution", "diffusion_resolution",
+          "electronics_resolution"};
+      constexpr std::array<int, 3> componentColors = {
+          kBlue + 1, kGreen + 2, kCyan + 2};
+      const std::array<double, 5> componentParameters = {
+          linearResidualResolutionFit->GetParameter(0),
+          linearResidualResolutionFit->GetParameter(1),
+          linearResidualResolutionFit->GetParameter(2),
+          linearResidualResolutionFit->GetParameter(3),
+          linearResidualResolutionFit->GetParameter(4)};
+      const std::array<double (*)(double*, double*), 3> componentFunctions = {
+          primaryIonizationResolution, diffusionResolution,
+          electronicsResolution};
+      for (std::size_t component = 0;
+           component < resolutionComponents.size(); ++component) {
+        resolutionComponents[component] = std::make_unique<TF1>(
+            componentNames[component], componentFunctions[component],
+            kResolutionFitMinimumTrackY, kSplineMaximumTrackY,
+            component == 2 ? 3 : 1);
+        if (component == 2) {
+          resolutionComponents[component]->SetParameters(
+              componentParameters[2], componentParameters[3],
+              componentParameters[4]);
+        } else {
+          resolutionComponents[component]->SetParameter(
+              0, componentParameters[component]);
+        }
+        resolutionComponents[component]->SetLineColor(
+            componentColors[component]);
+        resolutionComponents[component]->SetLineStyle(2);
+        resolutionComponents[component]->SetLineWidth(2);
+        resolutionComponents[component]->Draw("SAME");
+      }
+
+      resolutionFitCurve.SetName("linear_residual_resolution_fit_curve");
+      resolutionFitCurve.SetLineColor(kOrange + 7);
+      resolutionFitCurve.SetLineWidth(3);
+      constexpr std::array<const char*, 3> componentCurveNames = {
+          "primary_ionization_resolution_curve",
+          "diffusion_resolution_curve", "electronics_resolution_curve"};
+      for (std::size_t component = 0;
+           component < resolutionFitComponentCurves.size(); ++component) {
+        resolutionFitComponentCurves[component].SetName(
+            componentCurveNames[component]);
+        resolutionFitComponentCurves[component].SetLineColor(
+            componentColors[component]);
+        resolutionFitComponentCurves[component].SetLineStyle(2);
+        resolutionFitComponentCurves[component].SetLineWidth(2);
+      }
+      constexpr int kResolutionCurveSamples = 200;
+      for (int sample = 0; sample < kResolutionCurveSamples; ++sample) {
+        const double x =
+            kResolutionFitMinimumTrackY +
+            (kSplineMaximumTrackY - kResolutionFitMinimumTrackY) * sample /
+                (kResolutionCurveSamples - 1);
+        resolutionFitCurve.SetPoint(
+            sample, x, linearResidualResolutionFit->Eval(x));
+        for (std::size_t component = 0;
+             component < resolutionComponents.size(); ++component) {
+          resolutionFitComponentCurves[component].SetPoint(
+              sample, x, resolutionComponents[component]->Eval(x));
+        }
+      }
+      resolutionFitPlot.Add(&resolutionFitCurve, "L");
+      for (auto& componentCurve : resolutionFitComponentCurves) {
+        resolutionFitPlot.Add(&componentCurve, "L");
+      }
+
+      constexpr std::array<const char*, 5> parameterNames = {
+          "n", "d", "c", "f", "k"};
+      resolutionFitParameters =
+          std::make_unique<TPaveText>(0.14, 0.62, 0.43, 0.89, "NDC");
+      resolutionFitParameters->SetFillStyle(0);
+      resolutionFitParameters->SetBorderSize(0);
+      resolutionFitParameters->SetTextAlign(12);
+      resolutionFitParameters->SetTextSize(0.03);
+      const std::streamsize previousPrecision = std::cout.precision();
+      std::cout << "Linear-fit residual resolution model parameters:"
+                << std::setprecision(6);
+      for (std::size_t parameter = 0; parameter < parameterNames.size();
+           ++parameter) {
+        const double value =
+            linearResidualResolutionFit->GetParameter(parameter);
+        const double error =
+            linearResidualResolutionFit->GetParError(parameter);
+        std::ostringstream label;
+        label << parameterNames[parameter] << " = " << std::setprecision(4)
+              << value << " #pm " << error;
+        resolutionFitParameters->AddText(label.str().c_str());
+        std::cout << " " << parameterNames[parameter] << " = " << value
+                  << " +/- " << error;
+      }
+      std::cout.precision(previousPrecision);
+      std::cout << " (fit uncertainties)." << std::endl;
+      resolutionFitParameters->Draw();
+    } else {
+      std::cerr << "Resolution-components fit to linear-fit residual widths "
+                   "failed (status "
+                << fitStatus << ")." << std::endl;
+      linearResidualResolutionFit.reset();
+    }
+  } else {
+    std::cerr << "At least three linear-fit residual width points are "
+                 "required for the resolution-components fit; found "
+              << linearResidualSigmaGraph.GetN() << "." << std::endl;
+  }
+  resolutionFitCanvas = std::make_unique<TCanvas>(
+      "c_resolution_components_fit",
+      "Linear-fit residual resolution components", 1000, 700);
+  resolutionFitCanvas->cd();
+  resolutionFitPlot.Draw("A");
+  if (resolutionFitData.GetN() > 0) {
+    resolutionFitPlot.GetXaxis()->SetLimits(kResolutionFitMinimumTrackY,
+                                            kSplineMaximumTrackY);
+    resolutionFitPlot.GetYaxis()->SetTitle("Width [#mum]");
+    resolutionFitPlot.SetMinimum(0.0);
+    resolutionFitPlot.SetMaximum(600.0);
+  }
+  resolutionFitLegend = std::make_unique<TLegend>(0.62, 0.73, 0.89, 0.89);
+  resolutionFitLegend->AddEntry(&resolutionFitData, "Linear residuals", "p");
+  if (linearResidualResolutionFit) {
+    resolutionFitLegend->AddEntry(&resolutionFitCurve, "Total fit", "l");
+    resolutionFitLegend->AddEntry(
+        &resolutionFitComponentCurves[0],
+        "Primary ionization: n e^{-n|x|}", "l");
+    resolutionFitLegend->AddEntry(
+        &resolutionFitComponentCurves[1], "Diffusion: #sqrt{d|x|}", "l");
+    resolutionFitLegend->AddEntry(
+        &resolutionFitComponentCurves[2], "Electronics: c+fe^{kx}", "l");
+  } else {
+    resolutionFitUnavailableText =
+        std::make_unique<TPaveText>(0.2, 0.5, 0.8, 0.6, "NDC");
+    resolutionFitUnavailableText->SetFillStyle(0);
+    resolutionFitUnavailableText->SetBorderSize(0);
+    resolutionFitUnavailableText->SetTextAlign(22);
+    resolutionFitUnavailableText->AddText(
+        "Resolution fit unavailable; see macro output for details");
+    resolutionFitUnavailableText->Draw();
+  }
+  resolutionFitLegend->Draw();
+  resolutionFitCanvas->Modified();
+  resolutionFitCanvas->Update();
+  widthsCanvas.cd();
+
   TLegend widthsLegend(0.62, 0.76, 0.88, 0.89);
   widthsLegend.AddEntry(&residualSigmaGraph, "Spline Crystal Ball #sigma",
                         "p");
   widthsLegend.AddEntry(&linearResidualSigmaGraph,
                         "Linear Crystal Ball #sigma", "p");
   widthsLegend.AddEntry(&residualRmsGraph, "Residual RMS", "lp");
+  if (linearResidualResolutionFit) {
+    widthsLegend.AddEntry(linearResidualResolutionFit.get(),
+                          "#sqrt{(n e^{-n|x|})^{2}+d|x|+(c+fe^{kx})^{2}} fit",
+                          "l");
+    widthsLegend.AddEntry(resolutionComponents[0].get(),
+                          "Primary ionization: n e^{-n|x|}", "l");
+    widthsLegend.AddEntry(resolutionComponents[1].get(),
+                          "Diffusion: #sqrt{d|x|}", "l");
+    widthsLegend.AddEntry(resolutionComponents[2].get(),
+                          "Electronics: c+fe^{kx}", "l");
+  }
   widthsLegend.Draw();
+  widthsCanvas.Modified();
+  widthsCanvas.Update();
   outputFile->cd();
   if (residualSigmaGraph.Write() <= 0 ||
       linearResidualSigmaGraph.Write() <= 0 ||
       residualRmsGraph.Write() <= 0 || residualWidths.Write() <= 0 ||
+      (linearResidualResolutionFit &&
+       linearResidualResolutionFit->Write() <= 0) ||
+      (linearResidualResolutionFit &&
+       (resolutionComponents[0]->Write() <= 0 ||
+        resolutionComponents[1]->Write() <= 0 ||
+        resolutionComponents[2]->Write() <= 0)) ||
+      (resolutionFitParameters && resolutionFitParameters->Write() <= 0) ||
+      (resolutionFitCanvas &&
+       (resolutionFitData.Write() <= 0 || resolutionFitPlot.Write() <= 0 ||
+        (linearResidualResolutionFit &&
+         (resolutionFitCurve.Write() <= 0 ||
+          resolutionFitComponentCurves[0].Write() <= 0 ||
+          resolutionFitComponentCurves[1].Write() <= 0 ||
+          resolutionFitComponentCurves[2].Write() <= 0)) ||
+        resolutionFitCanvas->Write() <= 0)) ||
       widthsCanvas.Write() <= 0) {
     std::cerr << "Failed to write residual-width output to " << rootPath
               << std::endl;
@@ -1130,6 +1458,10 @@ void spatial_res(const char* runNumber) {
             << std::endl;
   std::cout << "Residual sigma and RMS plot saved to " << widthsPlotPath
             << std::endl;
+  std::cout << "Resolution-fit canvas c_resolution_components_fit saved to "
+            << rootPath << std::endl;
+  std::cout << "Crystal Ball residual MPV canvas and graphs saved to "
+            << rootPath << std::endl;
   std::cout << "Drift-velocity plot saved to " << driftVelocityPlotPath
             << " (spline derivative and linear-fit slope converted to "
                "cm/us; "
