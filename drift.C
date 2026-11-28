@@ -370,29 +370,29 @@ int main(int argc, char* argv[]) {
 
   // Setup the gas.
   MediumMagboltz gas;
-  gas.SetTemperature(293.15); //298.15
-  gas.SetPressure(763.7); // 5 mBar overpressure
-  gas.SetComposition("ar", 90., "co2", 10.); //("ar", config.argonPercent, "co2", config.co2Percent);
-  gas.Initialise(true);
-  gas.EnablePenningTransfer();
-  // Set the Penning transfer efficiency.
-  // constexpr double rPenning = 0.51;
-  // constexpr double lambdaPenning = 0.;
-  // gas.EnablePenningTransfer(rPenning, lambdaPenning, "ar");
+  // gas.SetTemperature(293.15); //298.15
+  // gas.SetPressure(763.7); // 5 mBar overpressure
+  // gas.SetComposition("ar", 90., "co2", 10.); //("ar", config.argonPercent, "co2", config.co2Percent);
+  // gas.Initialise(true);
+  // gas.EnablePenningTransfer();
+  // // Set the Penning transfer efficiency.
+  // // constexpr double rPenning = 0.51;
+  // // constexpr double lambdaPenning = 0.;
+  // // gas.EnablePenningTransfer(rPenning, lambdaPenning, "ar");
 
   MediumMagboltz gas1;
-  gas1.SetTemperature(293.15); //298.15
-  gas1.SetPressure(763.7); // 5 mBar overpressure
-  gas1.SetComposition("ar", 70., "co2", 30.);
-  gas1.Initialise(true);
-  gas1.EnablePenningTransfer();
+  // gas1.SetTemperature(293.15); //298.15
+  // gas1.SetPressure(763.7); // 5 mBar overpressure
+  // gas1.SetComposition("ar", 70., "co2", 30.);
+  // gas1.Initialise(true);
+  // gas1.EnablePenningTransfer();
 
   MediumMagboltz gas2;
-  gas2.SetTemperature(293.15); //298.15
-  gas2.SetPressure(763.7); // 5 mBar overpressure
-  gas2.SetComposition("ar", 85., "co2", 15.);
-  gas2.Initialise(true);
-  gas2.EnablePenningTransfer();
+  // gas2.SetTemperature(293.15); //298.15
+  // gas2.SetPressure(763.7); // 5 mBar overpressure
+  // gas2.SetComposition("ar", 85., "co2", 15.);
+  // gas2.Initialise(true);
+  // gas2.EnablePenningTransfer();
 
   // Load gas file with diffusion information (pre-calculated with Magboltz)
   if (!gas.LoadGasFile("/home/student/Software/GARFIELDPP_with_GEANT4_from_source_20260510/Examples/DriftDune/gas_files/ar_90.0_co2_10.0_ovP_3.00_B_0.0_angle_0.0_E_1e0_1e6.gas")) {
@@ -428,12 +428,12 @@ int main(int argc, char* argv[]) {
   // Add the wire in the centre.
   cmp.AddWire(0, 0, dSense, vSense, "s");
   cmp.AddWire(0, -cell_w/2, dField, vField);
-  cmp.AddWire(0, cell_w/2, dField, vField);
+  //cmp.AddWire(0, cell_w/2, dField, vField);
   // Add the Mylar planes.
   cmp.AddPlaneX(-cell_t/2, vMylar);
   cmp.AddPlaneX(cell_t/2, vMylar);
 
-  // cmp.EnablePeriodicityY();
+  cmp.EnablePeriodicityY();
   cmp.SetPeriodicityY(cell_w);
 
   // Create the sensor.
@@ -556,6 +556,7 @@ int main(int argc, char* argv[]) {
     fieldView.PlotFieldLines(line_x, line_y, line_z);
     cellView.Plot2d();
 
+    std::cout << "checkpoint 1" << std::endl;
 
     // Generate Drift Velocity Map
     Medium *med;
@@ -578,8 +579,11 @@ int main(int argc, char* argv[]) {
     TH2D* h_drift_time_sigma = new TH2D("h_drift_time_sigma", "Arrival Time Spread", np_x, -cell_t/2, cell_t/2, np_y, -cell_w/2, cell_w/2);
     TH2D* h_path_len = new TH2D("h_path_len", "Path Length", np_x, -cell_t/2, cell_t/2, np_y, -cell_w/2, cell_w/2);
 
+    std::cout << "checkpoint 2" << std::endl;
+
       // map the electron response
     for (int cx = 0; cx < np_x; cx++) {
+      std::cout << "Mapping drift velocity: " << (cx + 1) << "/" << np_x << std::endl;
       xp = h_v->GetXaxis()->GetBinCenter(cx + 1);
       for (int cy = 0; cy < np_y; cy++) {
         yp = h_v->GetYaxis()->GetBinCenter(cy + 1);
@@ -597,7 +601,7 @@ int main(int argc, char* argv[]) {
         v_mag = 1e4*std::sqrt(drift_v[0]*drift_v[0]+drift_v[1]*drift_v[1]+drift_v[2]*drift_v[2]);
         h_v->SetBinContent(cx + 1, cy + 1, v_mag);
 
-        drift.DriftElectron(xp, yp, zp, 0.);
+        drift.DriftElectron(xp, yp, zp, 0.);   //THIS step takes a long time, disable if unnecessary
         path_len = drift.GetPathLength();
         drift_t = drift.GetDriftTime();
         dt_sigma = drift.GetArrivalTimeSpread();
@@ -610,7 +614,7 @@ int main(int argc, char* argv[]) {
         h_path_len->SetBinContent(cx + 1, cy + 1, path_len);
       }
     }
-
+    std::cout << "checkpoint 3" << std::endl;
     gPad->SetLogz(0);
     TCanvas* c_v = new TCanvas("c_v", "Drift Velocity Map", 700, 800);
     c_v->cd();
@@ -1208,7 +1212,7 @@ int main(int argc, char* argv[]) {
                      ? transferVTX
                      : config.shaperOrder == 1 ? transfer1ord : transfer3ord;
       sensor.SetTransferFunction(transferFunction);
-      sensor.ConvoluteSignals();
+      sensor.ConvoluteSignal("s");
       if (saveWaveforms) {
         waveformEvent = static_cast<ULong64_t>(iEvent + 1);
         shapedWaveform.clear();
