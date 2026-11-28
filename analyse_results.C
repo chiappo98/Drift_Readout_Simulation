@@ -1,16 +1,20 @@
 #include <TCanvas.h>
 #include <TFile.h>
+#include <TF1.h>
 #include <TGraph.h>
 #include <TH1.h>
 #include <TH1D.h>
 #include <TH2D.h>
 #include <TPad.h>
+#include <TPaveText.h>
 #include <TTree.h>
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <iostream>
+#include <iomanip>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -349,7 +353,7 @@ void analyse_results(const char* runNumber) {
 
   outputFile.cd();
   TCanvas canvas("c_results", "Simulation results", 1600, 1200);
-  canvas.Divide(4, 5);
+  canvas.Divide(4, 6);
 
   double totalCharge = 0.0;
   double peakAmplitude = 0.0;
@@ -402,6 +406,7 @@ void analyse_results(const char* runNumber) {
   std::vector<double> clusterTimeDifferences;
   std::vector<double> clusterEnergies;
   std::vector<double> clusterElectronCounts;
+  std::vector<double> clusterCountsPerEvent;
   std::vector<double> electronEnergies;
   for (Long64_t entry = 0; entry < tree->GetEntries(); ++entry) {
     if (tree->GetEntry(entry) <= 0) {
@@ -445,6 +450,7 @@ void analyse_results(const char* runNumber) {
       tree->ResetBranchAddresses();
       return;
     }
+    clusterCountsPerEvent.push_back(static_cast<double>(clusterCount));
 
     for (std::size_t cluster = 0; cluster < clusterCount; ++cluster) {
       clusterEnergies.push_back(clusterE->at(cluster));
@@ -467,7 +473,7 @@ void analyse_results(const char* runNumber) {
       const double dx = clusterX->at(cluster + 1) - clusterX->at(cluster);
       const double dy = clusterY->at(cluster + 1) - clusterY->at(cluster);
       const double dz = clusterZ->at(cluster + 1) - clusterZ->at(cluster);
-      clusterDistances3D.push_back(std::sqrt(dx * dx + dy * dy + dz * dz) * 10);
+      clusterDistances3D.push_back(std::sqrt(dx * dx + dy * dy + dz * dz));
       clusterTimeDifferences.push_back(
           std::abs(clusterT->at(cluster + 1) - clusterT->at(cluster)) * 1000);
     }
@@ -518,9 +524,9 @@ void analyse_results(const char* runNumber) {
     histogram->Write();
   }
 
-  const std::array<TH1D*, 5> clusterHistograms{{
+  std::vector<TH1D*> clusterHistograms{
       makeHistogram("h_cluster_distance_3d",
-                    "Distance between consecutive clusters;Distance [mm];Pairs",
+                    "Distance between consecutive clusters;Distance [cm];Pairs",
                     clusterDistances3D),
       makeHistogram("h_cluster_time_difference",
                     "Time difference between consecutive clusters;Time difference [ps];Pairs",
@@ -532,15 +538,98 @@ void analyse_results(const char* runNumber) {
                     clusterEnergies),
       makeHistogram("h_electron_energy",
                     "Electron energy;Energy [eV];Electrons",
-                    electronEnergies)}};
+                    electronEnergies),
+      nullptr};
+  if (!clusterCountsPerEvent.empty()) {
+    const auto bounds = std::minmax_element(clusterCountsPerEvent.begin(),
+                                            clusterCountsPerEvent.end());
+    const int minimumClusters =
+        static_cast<int>(std::floor(*bounds.first));
+    const int maximumClusters =
+        static_cast<int>(std::ceil(*bounds.second));
+    constexpr int binCount = 75;
+    clusterHistograms.back() =
+        new TH1D("h_clusters_per_event",
+                 "Clusters per event;Number of clusters;Events",
+                 binCount,
+                 minimumClusters - 0.5,
+                 maximumClusters + 0.5);
+    for (const double clusterCount : clusterCountsPerEvent) {
+      clusterHistograms.back()->Fill(clusterCount);
+    }
+  } else {
+    clusterHistograms.back() =
+        new TH1D("h_clusters_per_event",
+                 "Clusters per event;Number of clusters;Events",
+                 1, -0.5, 0.5);
+  }
   for (std::size_t i = 0; i < clusterHistograms.size(); ++i) {
     auto* pad = canvas.GetPad(static_cast<int>(specs.size() + i + 1));
     pad->cd();
-    if (i >= 2) {
+    if (i >= 2 && i < 5) {
       pad->SetLogy();
       clusterHistograms[i]->SetMinimum(0.5);
     }
     clusterHistograms[i]->Draw("HIST");
+    if (i == 0 && clusterHistograms[i]->GetEntries() > 0) {
+      const double distanceMean =
+          clusterHistograms[i]->GetMean();
+      if (distanceMean > 0.0) {
+        TF1 clusterDistanceFit(
+            "f_cluster_distance_3d",
+            "[0]*[1]*[2]*exp(-[1]*x)",
+            0.0,
+            clusterHistograms[i]->GetXaxis()->GetXmax());
+        clusterDistanceFit.SetTitle(
+            "N(x) = n exp(-n x)");
+        clusterDistanceFit.SetParameters(
+            clusterHistograms[i]->GetEntries(),
+            1.0 / distanceMean);
+        clusterDistanceFit.SetParameter(
+            2,
+            clusterHistograms[i]->GetXaxis()->GetBinWidth(1));
+        clusterDistanceFit.SetParNames("Npairs", "n", "BinWidth");
+        clusterDistanceFit.FixParameter(
+            2,
+            clusterHistograms[i]->GetXaxis()->GetBinWidth(1));
+        clusterDistanceFit.SetParLimits(1, 0.0, 1e9);
+        clusterDistanceFit.SetLineColor(kRed);
+        clusterDistanceFit.SetLineWidth(2);
+        const int fitStatus =
+            clusterHistograms[i]->Fit(&clusterDistanceFit, "QRS");
+        if (fitStatus == 0) {
+          const double nPairsPerCm =
+              clusterDistanceFit.GetParameter(1);
+          const double nPairsPerCmError =
+              clusterDistanceFit.GetParError(1);
+          clusterDistanceFit.SetNpx(500);
+          clusterDistanceFit.Draw("same");
+          std::ostringstream resultText;
+          resultText << "n = " << std::setprecision(4)
+                     << nPairsPerCm << " #pm "
+                     << nPairsPerCmError << " ion pairs/cm";
+          auto* fitResult = new TPaveText(
+              0.50, 0.70, 0.88, 0.88, "NDC");
+          fitResult->SetFillColor(kWhite);
+          fitResult->SetFillStyle(1001);
+          fitResult->SetBorderSize(1);
+          fitResult->SetTextAlign(12);
+          fitResult->SetTextSize(0.055);
+          fitResult->SetTextColor(kRed);
+          fitResult->AddText(resultText.str().c_str());
+          fitResult->SetName("t_fit_cluster_distance_3d");
+          fitResult->Draw("NDC");
+          clusterHistograms[i]->GetListOfFunctions()->Add(
+              static_cast<TObject*>(fitResult));
+          pad->Update();
+          std::cout << "h_cluster_distance_3d fit: n = "
+                    << nPairsPerCm << " +/- " << nPairsPerCmError
+                    << " electron/ion pairs per cm" << std::endl;
+        } else {
+          std::cerr << "Failed to fit h_cluster_distance_3d." << std::endl;
+        }
+      }
+    }
     clusterHistograms[i]->Write();
   }
 
@@ -570,7 +659,7 @@ void analyse_results(const char* runNumber) {
         "Electrons above energy threshold;E0 [eV];N(electrons > E0)");
     thresholdGraph->SetLineWidth(2);
     thresholdGraph->SetLineColor(kBlue);
-    canvas.cd(20);
+    canvas.cd(21);
     thresholdGraph->Draw("AL");
     thresholdGraph->Write();
   }
